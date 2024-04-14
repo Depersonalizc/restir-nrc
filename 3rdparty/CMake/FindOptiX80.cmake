@@ -14,7 +14,7 @@ if ("${OPTIX80_PATH}" STREQUAL "")
     set(OPTIX80_PATH "C:/ProgramData/NVIDIA Corporation/OptiX SDK 8.0.0")
   else()
     # Adjust this if the OptiX SDK 8.0.0 installation is in a different location.
-    set(OPTIX80_PATH "~/NVIDIA-OptiX-SDK-8.0.0-linux64")
+    set(OPTIX80_PATH "~/nvidia/Optix/NVIDIA-OptiX-SDK-8.0.0-linux64-x86_64")
   endif()
 endif()
 

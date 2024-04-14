@@ -38,6 +38,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <dlfcn.h>
 
 
 bool static saveString(const std::string& filename, const std::string& text)

@@ -41,6 +41,7 @@
 #else
 #include <math.h>
 #define VECTOR_MATH_API inline
+#define CXX_STD_MATH
 #endif
 
 
