@@ -38,6 +38,7 @@
 // For the Bsdf_event_type.
 #include <mi/neuraylib/target_code_types.h>
 
+/* Transient flags */
 // Set when reaching a closesthit program.
 #define FLAG_HIT           0x00000001
 // Set when reaching the __anyhit__shadow program. Indicates visibility test failed.
@@ -47,6 +48,14 @@
 //#define FLAG_VOLUME               0x00000010 
 #define FLAG_VOLUME_SCATTERING      0x00000020
 #define FLAG_VOLUME_SCATTERING_MISS 0x00000040
+
+/* Persistent flags */
+#define FLAG_TRAIN 0x01000000
+#define FLAG_DEBUG 0x80000000
+
+// Changed every hit
+#define FLAG_MASK_TRANSIENT  0x00ffffff
+#define FLAG_MASK_PERSISTENT (~FLAG_MASK_TRANSIENT)
 
 // Small 4 entries deep material stack.
 #define MATERIAL_STACK_LAST 3
@@ -81,7 +90,7 @@ struct PerRayData
   
   float3 throughput;  // The current path troughput. Starts white and gets modulated with bsdf_over_pdf with each sample.
 
-  float  depth;
+  int    depth;
   float  areaSpread;    // This is the *SQARE ROOT* of a(x1...xn) in Eq (3)
   float  areaThreshold; // This is the *SQARE ROOT* of (c * a0) in Eq (4).
                         // Once areaSpread > areaThreshold we terminate the ray and query from NRC
