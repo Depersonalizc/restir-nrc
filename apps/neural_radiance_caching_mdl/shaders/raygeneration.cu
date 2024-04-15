@@ -104,7 +104,6 @@ __forceinline__ __device__ void sampleVolumeScattering(const float2 xi, const fl
 	dir = tbn.transformToWorld(d);
 }
 
-#if 0
 __forceinline__ __device__ float3 integrator(PerRayData& prd)
 {
 	// The integrator starts with black radiance and full path throughput.
@@ -225,129 +224,6 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd)
 
 	return prd.radiance;
 }
-#endif
-
-#define VOLUME_RENDER 0
-__forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
-{
-	// The integrator starts with black radiance and full path throughput.
-	prd.radiance   = make_float3(0.0f);
-	prd.pdf        = 0.0f;
-	prd.throughput = make_float3(1.0f);
-	prd.flags      = 0;
-	prd.sigma_t    = make_float3(0.0f); // Extinction coefficient: sigma_a + sigma_s.
-	prd.walk       = 0;                 // Number of random walk steps taken through volume scattering. 
-	prd.eventType  = mi::neuraylib::BSDF_EVENT_ABSORB; // Initialize for exit. (Otherwise miss programs do not work.)
-
-	// Nested material handling.
-	// Small stack of MATERIAL_STACK_SIZE = 4 entries of which the first is vacuum.
-	prd.idxStack         = 0;
-	prd.stack[0].ior     = make_float3(1.0f); // No effective IOR.
-	prd.stack[0].sigma_a = make_float3(0.0f); // No volume absorption.
-	prd.stack[0].sigma_s = make_float3(0.0f); // No volume scattering.
-	prd.stack[0].bias    = 0.0f;              // Isotropic volume scattering.
-
-	// Put payload pointer into two unsigned integers. Actually const, but that's not what optixTrace() expects.
-	uint2 payload = splitPointer(&prd);
-
-	// Russian Roulette path termination after a specified number of bounces needs the current depth.
-	//int depth = 0; // Path segment index. Primary ray is depth == 0. 
-	for (int depth = 0; depth < sysData.pathLengths.y; depth++)
-	{
-		// Self-intersection avoidance:
-		// Offset the ray t_min value by sysData.sceneEpsilon when a geometric primitive was hit by the previous ray.
-		// Primary rays and volume scattering miss events will not offset the ray t_min.
-		const float epsilon = (prd.flags & FLAG_HIT) ? sysData.sceneEpsilon : 0.0f;
-
-		prd.wo       = -prd.wi;        // Direction to observer.
-		prd.distance = RT_DEFAULT_MAX; // Shoot the next ray with maximum length.
-		prd.flags    = 0;              // reset flags
-
-		// Special cases for volume scattering!
-#if VOLUME_RENDER
-		if (prd.idxStack > 0) // Inside a volume?
-		{
-			// Note that this only supports homogeneous volumes so far! 
-			// No change in sigma_s along the random walk here.
-			const float3& sigma_s = prd.stack[prd.idxStack].sigma_s;
-
-			if (isNotNull(sigma_s)) // We're inside a volume and it has volume scattering?
-			{
-				// Indicate that we're inside a random walk. This changes the behavior of the miss programs.
-				prd.flags |= FLAG_VOLUME_SCATTERING;
-
-				// Random walk through scattering volume, sampling the distance.
-				// Note that the entry and exit of the volume is done according to the BSDF sampling.
-				// Means glass with volume scattering will still do the proper refractions.
-				// When the number of random walk steps has been exceeded, the next ray is shot with distance RT_DEFAULT_MAX
-				// to hit something. If that results in a transmission the scattering volume is left.
-				// If not, this continues until the maximum path length has been exceeded.
-				if (prd.walk < sysData.walkLength)
-				{
-					const float3 albedo = safe_div(sigma_s, prd.sigma_t);
-					const float2 xi = rng2(prd.seed);
-
-					const float s = sampleDensity(albedo, prd.throughput, prd.sigma_t, xi.x, prd.pdfVolume);
-
-					// Prevent logf(0.0f) by sampling the inverse range (0.0f, 1.0f].
-					prd.distance = -logf(1.0f - xi.y) / s;
-				}
-			}
-		}
-#endif
-
-		// Note that the primary rays and volume scattering miss cases do not offset the ray t_min by sysSceneEpsilon.
-		optixTrace(sysData.topObject,
-				   prd.pos, prd.wi, // origin, direction
-				   epsilon, prd.distance, 0.0f, // tmin, tmax, time
-				   OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_NONE,
-				   TYPE_RAY_RADIANCE, NUM_RAY_TYPES, TYPE_RAY_RADIANCE,
-				   payload.x, payload.y);
-
-#if (USE_SHADER_EXECUTION_REORDERING == 1 && OPTIX_VERSION >= 80000) // OptiX Shader Execution Reordering (SER) implementation.
-		unsigned int hint = 0; // miss uses some default value. The record type itself will distinguish this case.
-		if (optixHitObjectIsHit())
-		{
-			const int idMaterial = sysData.geometryInstanceData[optixHitObjectGetInstanceId()].ids.x;
-			hint = sysData.materialDefinitionsMDL[idMaterial].indexShader; // Shader configuration only.
-		}
-		optixReorder(hint, sysData.numBitsShaders);
-
-		optixInvoke(payload.x, payload.y);
-#endif
-
-		// Path termination by miss shader or sample() routines.
-		if (prd.eventType == mi::neuraylib::BSDF_EVENT_ABSORB || isNull(prd.throughput))
-		{
-			break;
-		}
-
-		// Unbiased Russian Roulette path termination.
-		if (depth >= sysData.pathLengths.x) // Start termination after a minimum number of bounces.
-		{
-			const float probability = fmaxf(prd.throughput);
-
-			if (probability < rng(prd.seed)) // Paths with lower probability to continue are terminated earlier.
-			{
-				break;
-			}
-
-			prd.throughput /= probability; // Path isn't terminated. Adjust the throughput so that the average is right again.
-		}
-
-#if VOLUME_RENDER
-		// We're inside a volume and the scatter ray missed.
-		if (prd.flags & FLAG_VOLUME_SCATTERING_MISS) // This implies FLAG_VOLUME_SCATTERING.
-		{
-			// Random walk through scattering volume, sampling the direction according to the phase function.
-			sampleVolumeScattering(rng2(prd.seed), prd.stack[prd.idxStack].bias, prd.wi);
-		}
-#endif
-	}
-
-	return prd.radiance;
-}
-
 
 __forceinline__ __device__ unsigned int distribute(const uint2 launchIndex)
 {
@@ -400,7 +276,7 @@ extern "C" __global__ void __raygen__path_tracer_local_copy()
 	prd.pos = ray.org;
 	prd.wi = ray.dir;
 
-	float3 radiance = nrcIntegrator(prd);
+	float3 radiance = integrator(prd);
 
 #if USE_DEBUG_EXCEPTIONS
 	// DEBUG Highlight numerical errors.
@@ -515,7 +391,7 @@ extern "C" __global__ void __raygen__path_tracer()
 	prd.pos = ray.org;
 	prd.wi = ray.dir;
 
-	float3 radiance = nrcIntegrator(prd);
+	float3 radiance = integrator(prd);
 
 #if USE_DEBUG_EXCEPTIONS
 	// DEBUG Highlight numerical errors.
@@ -603,6 +479,7 @@ extern "C" __global__ void __raygen__path_tracer()
 	}
 }
 
+namespace {
 
 __forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
 {
@@ -617,8 +494,136 @@ __forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
 	const auto xLocal = launchIndex.x - (launchIndex.x >> sysData.tileShift.x << sysData.tileShift.x);
 	const auto yLocal = launchIndex.y - (launchIndex.y >> sysData.tileShift.y << sysData.tileShift.y);
 	const auto idxLocal = (yLocal << sysData.tileShift.x) + xLocal;
-	
+
 	return idxLocal == sysData.tileTrainingIndex;
+}
+
+#define VOLUME_RENDER 1
+__forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
+{
+	// The integrator starts with black radiance and full path throughput.
+	prd.radiance   = make_float3(0.0f);
+	prd.pdf        = 0.0f;
+	prd.throughput = make_float3(1.0f);
+	prd.flags      = 0;
+	prd.sigma_t    = make_float3(0.0f); // Extinction coefficient: sigma_a + sigma_s.
+	prd.walk       = 0;                 // Number of random walk steps taken through volume scattering. 
+	prd.eventType  = mi::neuraylib::BSDF_EVENT_ABSORB; // Initialize for exit. (Otherwise miss programs do not work.)
+
+	// Nested material handling.
+	// Small stack of MATERIAL_STACK_SIZE = 4 entries of which the first is vacuum.
+	prd.idxStack         = 0;
+	prd.stack[0].ior     = make_float3(1.0f); // No effective IOR.
+	prd.stack[0].sigma_a = make_float3(0.0f); // No volume absorption.
+	prd.stack[0].sigma_s = make_float3(0.0f); // No volume scattering.
+	prd.stack[0].bias    = 0.0f;              // Isotropic volume scattering.
+
+	// Put payload pointer into two unsigned integers. Actually const, but that's not what optixTrace() expects.
+	uint2 payload = splitPointer(&prd);
+
+	// Russian Roulette path termination after a specified number of bounces needs the current depth.
+	//int depth = 0; // Path segment index. Primary ray is depth == 0. 
+	for (int depth = 0; depth < sysData.pathLengths.y; depth++)
+	{
+		// Self-intersection avoidance:
+		// Offset the ray t_min value by sysData.sceneEpsilon when a geometric primitive was hit by the previous ray.
+		// Primary rays and volume scattering miss events will not offset the ray t_min.
+		const float epsilon = (prd.flags & FLAG_HIT) ? sysData.sceneEpsilon : 0.0f;
+
+		prd.wo       = -prd.wi;        // Direction to observer.
+		prd.distance = RT_DEFAULT_MAX; // Shoot the next ray with maximum length.
+		prd.flags    = 0;              // reset flags
+		prd.depth    = depth;
+
+		// Special cases for volume scattering!
+		// Set ray FLAG_VOLUME_SCATTERING and optionally tmax
+#if VOLUME_RENDER
+		if (prd.idxStack > 0) // Inside a volume?
+		{
+			// Note that this only supports homogeneous volumes so far! 
+			// No change in sigma_s along the random walk here.
+			const float3& sigma_s = prd.stack[prd.idxStack].sigma_s;
+
+			if (isNotNull(sigma_s)) // We're inside a volume and it has volume scattering?
+			{
+				// Indicate that we're inside a random walk. This changes the behavior of the miss programs.
+				prd.flags |= FLAG_VOLUME_SCATTERING;
+
+				// Random walk through scattering volume, sampling the distance.
+				// Note that the entry and exit of the volume is done according to the BSDF sampling.
+				// Means glass with volume scattering will still do the proper refractions.
+				// When the number of random walk steps has been exceeded, the next ray is shot with distance RT_DEFAULT_MAX
+				// to hit something. If that results in a transmission the scattering volume is left.
+				// If not, this continues until the maximum path length has been exceeded.
+				if (prd.walk < sysData.walkLength)
+				{
+					const float3 albedo = safe_div(sigma_s, prd.sigma_t);
+					const float2 xi = rng2(prd.seed);
+
+					const float s = sampleDensity(albedo, prd.throughput, prd.sigma_t, xi.x, prd.pdfVolume);
+
+					// Prevent logf(0.0f) by sampling the inverse range (0.0f, 1.0f].
+					prd.distance = -logf(1.0f - xi.y) / s;
+				}
+			}
+		}
+#endif
+
+		// Note that the primary rays and volume scattering miss cases do not offset the ray t_min by sysSceneEpsilon.
+		// Updated: prd.radiance, .throughput, .flags, .eventType (for BSDF importance sampling)
+		//             .pos, .distance
+		//             .wi (next ray)
+		//             .stack, .idxStack
+		optixTrace(sysData.topObject,
+				   prd.pos, prd.wi, // origin, direction
+				   epsilon, prd.distance, 0.0f, // tmin, tmax, time
+				   OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_NONE,
+				   TYPE_RAY_RADIANCE, NUM_RAY_TYPES, TYPE_RAY_RADIANCE,
+				   payload.x, payload.y);
+
+#if (USE_SHADER_EXECUTION_REORDERING == 1 && OPTIX_VERSION >= 80000) // OptiX Shader Execution Reordering (SER) implementation.
+		unsigned int hint = 0; // miss uses some default value. The record type itself will distinguish this case.
+		if (optixHitObjectIsHit())
+		{
+			const int idMaterial = sysData.geometryInstanceData[optixHitObjectGetInstanceId()].ids.x;
+			hint = sysData.materialDefinitionsMDL[idMaterial].indexShader; // Shader configuration only.
+		}
+		optixReorder(hint, sysData.numBitsShaders);
+
+		optixInvoke(payload.x, payload.y);
+#endif
+
+		// Path termination by miss shader or sample() routines.
+		if (prd.eventType == mi::neuraylib::BSDF_EVENT_ABSORB || isNull(prd.throughput))
+		{
+			break;
+		}
+
+		// Unbiased Russian Roulette path termination.
+		if (depth >= sysData.pathLengths.x) // Start termination after a minimum number of bounces.
+		{
+			const float probability = fmaxf(prd.throughput);
+
+			if (probability < rng(prd.seed)) // Paths with lower probability to continue are terminated earlier.
+			{
+				break;
+			}
+
+			prd.throughput /= probability; // Path isn't terminated. Adjust the throughput so that the average is right again.
+		}
+
+#if VOLUME_RENDER
+		// We're inside a volume and the scatter ray missed.
+		if (prd.flags & FLAG_VOLUME_SCATTERING_MISS) // This implies FLAG_VOLUME_SCATTERING.
+		{
+			// Random walk through scattering volume, sampling the direction according to the phase function.
+			sampleVolumeScattering(rng2(prd.seed), prd.stack[prd.idxStack].bias, prd.wi);
+		}
+#endif
+	}
+
+	return prd.radiance;
+}
 }
 
 extern "C" __global__ void __raygen__nrc_path_tracer()
@@ -655,16 +660,19 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	}
 #endif
 
-	const bool training = isTrainingRay(theLaunchIndex);
+	const bool training = ::isTrainingRay(theLaunchIndex);
+
+#if 1
 	if (training)
 	{
 		auto buffer = reinterpret_cast<float4*>(sysData.outputBuffer);
 		buffer[index] = { 0.0f, 1000000.0f, 0.0f, 1.0f };  // super green
 		return;
 	}
+#endif
 
 	// Lens shaders
-	const LensRay ray = optixDirectCall<LensRay, const float2, const float2, const float2>(sysData.typeLens, screen, pixel, sample);
+	const LensRay ray = optixDirectCall<LensRay>(sysData.typeLens, screen, pixel, sample);
 	prd.pos = ray.org;
 	prd.wi  = ray.dir;
 
