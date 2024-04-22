@@ -104,9 +104,138 @@ __forceinline__ __device__ void sampleVolumeScattering(const float2 xi, const fl
   dir = tbn.transformToWorld(d);
 }
 
+__forceinline__ __device__ float3 integrator_reference(PerRayData& prd, int index) {
+    prd.buffer_index = index;
 
-__forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
-{
+    // The integrator starts with black radiance and full path throughput.
+    prd.radiance   = make_float3(0.0f);
+    prd.pdf        = 0.0f;
+    prd.throughput = make_float3(1.0f);
+    prd.flags      = 0;
+    prd.sigma_t    = make_float3(0.0f); // Extinction coefficient: sigma_a + sigma_s.
+    prd.walk       = 0;                 // Number of random walk steps taken through volume scattering.
+    prd.eventType  = mi::neuraylib::BSDF_EVENT_ABSORB; // Initialize for exit. (Otherwise miss programs do not work.)
+    // Nested material handling.
+    prd.idxStack   = 0;
+    // Small stack of four entries of which the first is vacuum.
+    prd.stack[0].ior     = make_float3(1.0f); // No effective IOR.
+    prd.stack[0].sigma_a = make_float3(0.0f); // No volume absorption.
+    prd.stack[0].sigma_s = make_float3(0.0f); // No volume scattering.
+    prd.stack[0].bias    = 0.0f;              // Isotropic volume scattering.
+
+    // Put payload pointer into two unsigned integers. Actually const, but that's not what optixTrace() expects.
+    uint2 prd_ptr = splitPointer(&prd);
+    uint3 payload = {prd_ptr.x, prd_ptr.y, 1};
+
+    int depth = 0; // Path segment index. Primary ray is depth == 0.
+
+    // Russian Roulette path termination after a specified number of bounces needs the current depth.
+    // while (depth < sysData.pathLengths.y)
+    while(depth < 32)
+    {
+        // Self-intersection avoidance:
+        // Offset the ray t_min value by sysData.sceneEpsilon when a geometric primitive was hit by the previous ray.
+        // Primary rays and volume scattering miss events will not offset the ray t_min.
+        const float epsilon = (prd.flags & FLAG_HIT) ? sysData.sceneEpsilon : 0.0f;
+
+        prd.wo       = -prd.wi;        // Direction to observer.
+        prd.distance = RT_DEFAULT_MAX; // Shoot the next ray with maximum length.
+        prd.flags    = 0;
+
+        // Special cases for volume scattering!
+        if (0 < prd.idxStack) // Inside a volume?
+        {
+            // Note that this only supports homogeneous volumes so far!
+            // No change in sigma_s along the random walk here.
+            const float3 sigma_s = prd.stack[prd.idxStack].sigma_s;
+
+            if (isNotNull(sigma_s)) // We're inside a volume and it has volume scattering?
+            {
+                // Indicate that we're inside a random walk. This changes the behavior of the miss programs.
+                prd.flags |= FLAG_VOLUME_SCATTERING;
+
+                // Random walk through scattering volume, sampling the distance.
+                // Note that the entry and exit of the volume is done according to the BSDF sampling.
+                // Means glass with volume scattering will still do the proper refractions.
+                // When the number of random walk steps has been exceeded, the next ray is shot with distance RT_DEFAULT_MAX
+                // to hit something. If that results in a transmission the scattering volume is left.
+                // If not, this continues until the maximum path length has been exceeded.
+                if (prd.walk < sysData.walkLength)
+                {
+                    const float3 albedo = safe_div(sigma_s, prd.sigma_t);
+                    const float2 xi     = rng2(prd.seed);
+
+                    const float s = sampleDensity(albedo, prd.throughput, prd.sigma_t, xi.x, prd.pdfVolume);
+
+                    // Prevent logf(0.0f) by sampling the inverse range (0.0f, 1.0f].
+                    prd.distance = -logf(1.0f - xi.y) / s;
+                }
+            }
+        }
+
+#if (USE_SHADER_EXECUTION_REORDERING == 0 || OPTIX_VERSION < 80000)
+        // Note that the primary rays and volume scattering miss cases do not offset the ray t_min by sysSceneEpsilon.
+        optixTrace(sysData.topObject,
+                   prd.pos, prd.wi, // origin, direction
+                   epsilon, prd.distance, 0.0f, // tmin, tmax, time
+                   OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_NONE,
+                   TYPE_RAY_RADIANCE, NUM_RAY_TYPES, TYPE_RAY_RADIANCE,
+                   payload.x, payload.y);
+#else
+        // OptiX Shader Execution Reordering (SER) implementation.
+        optixTraverse(sysData.topObject,
+                      prd.pos, prd.wi, // origin, direction
+                      epsilon, prd.distance, 0.0f, // tmin, tmax, time
+                      OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_NONE,
+                      TYPE_RAY_RADIANCE, NUM_RAY_TYPES, TYPE_RAY_RADIANCE,
+                      payload.x, payload.y);
+
+        unsigned int hint = 0; // miss uses some default value. The record type itself will distinguish this case.
+        if (optixHitObjectIsHit())
+        {
+            const int idMaterial = sysData.geometryInstanceData[optixHitObjectGetInstanceId()].ids.x;
+            hint = sysData.materialDefinitionsMDL[idMaterial].indexShader; // Shader configuration only.
+        }
+        optixReorder(hint, sysData.numBitsShaders);
+
+        optixInvoke(payload.x, payload.y);
+#endif
+
+        // Path termination by miss shader or sample() routines.
+        if ((prd.eventType == mi::neuraylib::BSDF_EVENT_ABSORB) || isNull(prd.throughput))
+        {
+            break;
+        }
+
+        // Unbiased Russian Roulette path termination.
+        if (sysData.pathLengths.x <= depth) // Start termination after a minimum number of bounces.
+        {
+            const float probability = fmaxf(prd.throughput);
+
+            if (probability < rng(prd.seed)) // Paths with lower probability to continue are terminated earlier.
+            {
+                break;
+            }
+
+            prd.throughput /= probability; // Path isn't terminated. Adjust the throughput so that the average is right again.
+        }
+
+        // We're inside a volume and the scatter ray missed.
+        if (prd.flags & FLAG_VOLUME_SCATTERING_MISS) // This implies FLAG_VOLUME_SCATTERING.
+        {
+            // Random walk through scattering volume, sampling the direction according to the phase function.
+            sampleVolumeScattering(rng2(prd.seed), prd.stack[prd.idxStack].bias, prd.wi);
+        }
+
+        ++depth; // Next path segment.
+    }
+
+    return prd.radiance;
+}
+
+
+// TODO: reference_radiance not used just yet
+__forceinline__ __device__ float3 integrator(PerRayData& prd, int index, float3 reference_radiance) {
   prd.buffer_index = index;
 
   // The integrator starts with black radiance and full path throughput.
@@ -128,9 +257,9 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
   // Put payload pointer into two unsigned integers. Actually const, but that's not what optixTrace() expects.
   uint2 payload = splitPointer(&prd);
 
-  // Russian Roulette path termination after a specified number of bounces needs the current depth.
-  int depth = 0; // Path segment index. Primary ray is depth == 0. 
+  int depth = 0; // Path segment index. Primary ray is depth == 0.
 
+  // Russian Roulette path termination after a specified number of bounces needs the current depth.
   // while (depth < sysData.pathLengths.y)
   while(depth < 1)
   {
@@ -187,7 +316,7 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
     optixTraverse(sysData.topObject,
                   prd.pos, prd.wi, // origin, direction
                   epsilon, prd.distance, 0.0f, // tmin, tmax, time
-                  OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_NONE, 
+                  OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_NONE,
                   TYPE_RAY_RADIANCE, NUM_RAY_TYPES, TYPE_RAY_RADIANCE,
                   payload.x, payload.y);
 
@@ -288,8 +417,28 @@ extern "C" __global__ void __raygen__path_tracer_local_copy()
   prd.pos = ray.org;
   prd.wi  = ray.dir;
 
+  // Grab the pixel index
   const unsigned int index = theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x;
-  float3 radiance = integrator(prd, index);
+
+  // Zero out the reservoir if this is the first iteration
+  if (0 == sysData.iterationIndex) {
+      Reservoir* reservoir_buffer = reinterpret_cast<Reservoir*>(sysData.reservoirBuffer);
+      Reservoir* reservoir = &reservoir_buffer[index];
+      *reservoir = Reservoir({0, 0, 0});
+  }
+
+
+// Calculate the reference in real time.
+  float3 radiance_reference = make_float3(0);
+#if PRECALCULATE_REFERENCE > 0
+    // Reference calculation: simply shoot a ton of rays per pixel with a large depth
+    // THIS WILL SLOW EVERYTHING DOWN! Don't use in acutal deployment
+    radiance_reference = integrator_reference(prd, index);
+#endif
+
+  // Actual integrator calculation:
+  // Right now this only means ReSTIR DI
+  float3 radiance = integrator(prd, index, radiance_reference);
 
 #if USE_DEBUG_EXCEPTIONS
   // DEBUG Highlight numerical errors.
@@ -336,10 +485,6 @@ extern "C" __global__ void __raygen__path_tracer_local_copy()
     {
       const float4 dst = buffer[index]; // RGBA32F
       radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
-    } else {
-        Reservoir* reservoir_buffer = reinterpret_cast<Reservoir*>(sysData.reservoirBuffer);
-        Reservoir* reservoir = &reservoir_buffer[index];
-        *reservoir = Reservoir({0, 0, 0});
     }
     buffer[index] = make_float4(radiance, 1.0f);
 #endif

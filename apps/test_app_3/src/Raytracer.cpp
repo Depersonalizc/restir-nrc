@@ -38,7 +38,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-
+#include <dlfcn.h>
 
 bool static saveString(const std::string& filename, const std::string& text)
 {
@@ -2613,6 +2613,8 @@ bool Raytracer::compileMaterial(mi::neuraylib::ITransaction* transaction, Materi
     m_shaders.push_back(res.target_code);
     // Store the shader configuration to be able to build the required direct callables on the device later.
     m_shaderConfigurations.push_back(config);
+
+    std::cerr << "m_shaderConfigurations.size() = " << m_shaderConfigurations.size() << std::endl;
 
     // Add all used resources. The zeroth entry is the invalid resource.
     for (mi::Size i = 1, n = res.target_code->get_texture_count(); i < n; ++i)

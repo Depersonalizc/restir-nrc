@@ -4,8 +4,8 @@ add_subdirectory( test_app_3 )
 
 return()
 
-add_subdirectory( test_app )
-add_subdirectory( test_app_2 )
+# add_subdirectory( test_app )
+# add_subdirectory( test_app_2 )
 
 # Slightly advanced OptiX 7 introductory examples.
 #add_subdirectory( intro_runtime )  # Port of the advanced sample optixIntro_07 using the CUDA Runtime API.
@@ -71,7 +71,7 @@ endif()
 # on the transmission side which adds radiance.
 # Added support for Specular and GGX_Smith BTDF materials.
 # Also homogeneous volume scattering is implemented in this example the same way as inside the MDL_renderer. (See scene_rtigo12_*.txt files for examples.)
-#add_subdirectory( rtigo12 )
+add_subdirectory( rtigo12 )
 
 # Based on rtigo9, but replacing all material handling with MDL materials.
 # The MDL SDK is used to generate the minimal amount of direct callable programs per MDL material shader.

@@ -41,6 +41,7 @@
 #else
 #include <math.h>
 #define VECTOR_MATH_API inline
+#define CXX_STD_MATH
 #endif
 
 
@@ -132,10 +133,12 @@ VECTOR_MATH_API unsigned long long min(unsigned long long a, unsigned long long 
 #endif
 
 /** lerp */
+#ifndef CXX_STD_MATH
 VECTOR_MATH_API float lerp(const float a, const float b, const float t)
 {
   return a + t * (b - a);
 }
+#endif
 
 /** bilerp */
 VECTOR_MATH_API float bilerp(const float x00, const float x10, const float x01, const float x11, 
