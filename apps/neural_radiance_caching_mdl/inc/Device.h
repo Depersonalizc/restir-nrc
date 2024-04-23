@@ -324,7 +324,7 @@ struct InstanceData
 struct DeviceState
 {
 	int2     resolution;
-	int2     tileSize;
+	//int2     tileSize;
 	int2     pathLengths;
 	int      walkLength;
 	int      samplesSqrt;
@@ -491,6 +491,11 @@ private:
 	void initDeviceProperties();
 	void initPipeline();
 	void initSBT(const std::vector<OptixProgramGroup>& programGroups);
+	void initNRC();
+	void resizeNRC();
+
+	// Adjust the tile size according to #train records generated last frame.
+	void adjustTileSize(int numTrainRecords);
 
 	[[nodiscard]] std::vector<OptixModule> buildModules() const;
 	[[nodiscard]] std::vector<OptixProgramGroupDesc> buildProgramGroupDescs(const std::vector<OptixModule>& modules) const;
@@ -558,20 +563,29 @@ public:
 	std::vector<GeometryInstanceData> m_geometryInstanceData;
 	GeometryInstanceData* m_d_geometryInstanceData;
 
-	// This contains the root traversable handle as well.
+	// Host-side NRC Control block.
+	// Device-side is pointed by m_systemData.nrcCB
+	nrc::ControlBlock m_nrcControlBlock;
+
 	SystemData m_systemData{
+		// Static Data ==========
+		// This contains the root traversable handle as well.
 		.resolution     = {1, 1},
-		.tileSize       = {8, 8},
-		.tileShift      = {3, 3},
 		.pathLengths    = {2, 5},
 		.walkLength     = 1,
 		.sceneEpsilon   = 500.0f * SCENE_EPSILON_SCALE,
 		.clockScale     = 1000.0f * CLOCK_FACTOR_SCALE,
 		.directLighting = 1,
-	};   
+
+		// Per-frame Data ==========
+		.pf = {
+			.tileSize  = {8, 8},
+			//.tileShift = {3, 3},
+		}
+	};
 	SystemData* m_d_systemData; // Device side CUdeviceptr of the system data.
 
-	std::vector<int> m_subFrames; // A host array with all sub-frame indices, used to update the device side sysData.iterationIndex fully asynchronously.
+	//std::vector<int> m_subFrames; // A host array with all sub-frame indices, used to update the device side sysData.iterationIndex fully asynchronously.
 
 	int m_launchWidth;
 
@@ -583,11 +597,11 @@ public:
 
 	std::vector<LightDefinition> m_lights; // Staging data for the device side sysData.lightDefinitions
 
-	CUgraphicsResource  m_cudaGraphicsResource; // The handle for the registered OpenGL PBO or texture image resource when using interop.
+	CUgraphicsResource  m_cudaGraphicsResource{}; // The handle for the registered OpenGL PBO or texture image resource when using interop.
 
-	CUmodule    m_moduleCompositor;
-	CUfunction  m_functionCompositor;
-	CUdeviceptr m_d_compositorData;
+	CUmodule    m_moduleCompositor{};
+	CUfunction  m_functionCompositor{};
+	CUdeviceptr m_d_compositorData{};
 
 #if USE_FP32_OUTPUT
 	std::vector<float4> m_bufferHost;

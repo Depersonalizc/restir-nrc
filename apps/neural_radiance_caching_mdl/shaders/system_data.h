@@ -52,6 +52,100 @@ struct GeometryInstanceData
 	CUdeviceptr indices;
 };
 
+namespace nrc
+{
+	constexpr int NUM_BATCHES = 4;
+	constexpr int NUM_TRAINING_RECORDS_PER_FRAME = 65536;
+
+	constexpr int TRAIN_RECORD_INDEX_NONE = -1; // Indicate primary ray
+	constexpr int TRAIN_RECORD_INDEX_BUFFER_FULL = -2; // All secondary rays if buffer is full
+
+	// Keep track of the ray path for radiance prop
+	struct TrainingRecord
+	{
+		// 16 byte alignment
+
+		// 8 byte alignment
+
+		// 4 byte alignment
+		int propTo/* = TRAIN_RECORD_INDEX_NONE*/; // Link to next training record in the direction of radiance prop.
+		
+		// Used to modulate radiance prop'd from *previous* record.
+		float3 localThroughput; 
+
+		// A radiance prop looks like this: (if propTo >= 0)
+		// propFrom = index of this TrainingRecord
+		// const auto &nextRec = trainingRecords[propTo];
+		// trainingRadianceTargets[propTo] += nextRec.localThroughput * trainingRadianceTargets[propFrom];
+	};
+
+	struct RadianceQuery
+	{
+		// 16 byte alignment
+
+		// 8 byte alignment
+		float2 direction;
+		float2 normal;
+
+		// 4 byte alignment
+		float3 position;
+		float3 diffuse;
+		float3 specular;
+		float3 roughness;
+	};
+
+	struct ControlBlock
+	{
+		// 16 byte alignment
+
+		// 8 byte alignment
+		
+		// Static. All point to fixed-length arrays of 65536 training records.
+		TrainingRecord *trainingRecords = nullptr; // numTrainingRecords -> 65536
+		float3 *trainingRadianceTargets = nullptr; // numTrainingRecords -> 65536
+		// The results of those queries will be used to train the NRC.
+		RadianceQuery *radianceQueriesTraining = nullptr; // numTrainingRecords -> 65536
+
+		// TODO: Allocate & Resize!
+		// Points to a dynamic array of (#pixels + #tiles) randiance queries. Note the #tiles is dynamic each frame.
+		// Capacity is (#pixels + #2x2-tiles ~= 1.25*#pixels). Re-allocate when the render resolution changes.
+		//
+		// The first #pixels queries are at the end of short rendering paths, in the flattened order of pixels.
+		// -- Results (potentially) used for rendering (Remember to modulate with `lastRenderingThroughput`)
+		// -- For rays that are terminated early by missing into envmap, the RadianceQuery contains garbage inputs. For convenience
+		//    we still query but the results won't get accumulated into the pixel buffer, since `lastRenderingThroughput` should be 0.
+		// 
+		// The following #tiles queries are at the end of training suffixes, in the flattened order of tiles.
+		// -- Results (potentially) used for initiating radiance propagation in self-training.
+		// -- For unbiased training rays, the RadianceQuery contains garbage inputs. For convenience we still query
+		//    but the results won't be used to initiate radiance propagation, as indicated by the corresponding TrainTerminalVertex.
+		RadianceQuery *radianceQueriesInference = nullptr;
+
+		// TODO: Allocate & Resize!
+		float3 *lastRenderThroughput = nullptr; // #pixels
+
+		// 4 byte alignment
+		int numTrainingRecords = 0;   // Number of training records generated. Upated per-frame
+		
+		//int maxNumTrainingRecords = NUM_TRAINING_RECORDS_PER_FRAME;
+	};
+}
+
+// Data updated per frame
+struct SystemDataPerFrame
+{
+	// 16 byte alignment
+
+	// 8 byte alignment
+	int2 tileSize = { 8, 8 };    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
+	//int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant. 
+
+	// 4 byte alignment
+	int iterationIndex;
+	int totalSubframeIndex;  // Added: total number of subframes, counting all iterations
+	int tileTrainingIndex;   // The local index of training ray within each tile. Randomly sampled from [0..tileSize) every subframe
+};
+
 struct SystemData
 {
 	// 16 byte alignment
@@ -60,11 +154,14 @@ struct SystemData
 	// 8 byte alignment
 	OptixTraversableHandle topObject;
 
+	nrc::ControlBlock* nrcCB; // Single NRC control block
+
 	// The accumulated linear color space output buffer.
 	// This is always sized to the resolution, not always matching the launch dimension.
 	// Using a CUdeviceptr here to allow for different buffer formats without too many casts.
 	CUdeviceptr outputBuffer;
 	// These buffers are used differently among the rendering strategies.
+	// See: Device::compositor. Not used for this NRC demo
 	CUdeviceptr tileBuffer;
 	CUdeviceptr texelBuffer;
 
@@ -77,8 +174,6 @@ struct SystemData
 	DeviceShaderConfiguration* shaderConfigurations;    // Indexed by MaterialDefinitionMDL::indexShader.
 
 	int2 resolution;  // The actual rendering resolution. Independent from the launch dimensions for some rendering strategies.
-	int2 tileSize;    // Example: make_int2(8, 4) for 8x4 tiles. Must be a power of two to make the division a right-shift.
-	int2 tileShift;   // Example: make_int2(3, 2) for the integer division by tile size. That actually makes the tileSize redundant. 
 	int2 pathLengths; // .x = min path length before Russian Roulette kicks in, .y = maximum path length
 
 	// 4 byte alignment 
@@ -98,11 +193,12 @@ struct SystemData
 	int numBitsShaders; // The number of bits needed to represent the number of elements in shaderConfigurations. Used as coherence hint in SER.
 
 	int directLighting;
+	
+	// Padding to 16-byte alignment
+	//int pad0;
+	//int pad1;
 
-	// Per-frame data. Placed in the end to make one single copy possible
-	int iterationIndex;
-	int totalSubframeIndex;  // Added: total number of subframes, counting all iterations
-	int tileTrainingIndex;   // The local index of training ray within each tile. Randomly sampled from [0..tileSize) every subframe
+	SystemDataPerFrame pf;
 };
 
 
