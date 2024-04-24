@@ -78,6 +78,14 @@
 
 #include <tiny-cuda-nn/vec.h>
 
+// ADDED BY USER, NOT IN ORIGINAL
+#ifndef TCNN_MIN_GPU_ARCH
+// 75 for rtx2060
+// check for more values at https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/
+#define TCNN_MIN_GPU_ARCH 75
+
+#endif
+
 #if defined(__CUDA_ARCH__)
 static_assert(__CUDA_ARCH__ >= TCNN_MIN_GPU_ARCH * 10, "MIN_GPU_ARCH=" STR(TCNN_MIN_GPU_ARCH) "0 must bound __CUDA_ARCH__=" STR(__CUDA_ARCH__) " from below, but doesn't.");
 #endif

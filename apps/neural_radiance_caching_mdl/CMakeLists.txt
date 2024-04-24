@@ -37,11 +37,18 @@ find_package(GLEW REQUIRED)
 find_package(CUDAToolkit 10.0 REQUIRED)
 find_package(DevIL_1_8_0 REQUIRED)
 find_package(ASSIMP REQUIRED)
+find_package(TCNN REQUIRED)
 
 if(MDL_SDK_FOUND)
   message("MDL_SDK_INCLUDE_DIRS = " "${MDL_SDK_INCLUDE_DIRS}")
 else()
   message(FATAL_ERROR "MDL SDK not found.")
+endif()
+
+if(TCNN_FOUND)
+  message("TCNN_INCLUDE_DIRS = " "${TCNN_INCLUDE_DIRS}")
+else()
+  message(FATAL_ERROR "TCNN not found.")
 endif()
 
 # OptiX SDK 7.x and 8.x versions are searched inside the top-level CMakeLists.txt.
@@ -236,6 +243,18 @@ source_group( "shaders_headers" FILES ${SHADERS_HEADERS} )
 source_group( "prg"             FILES ${PROGRAM_MODULES} )
 source_group( "ptx"             FILES ${KERNEL_MODULES} )
 
+# added for tcnn
+# set(
+#     TCNN_DEPS
+#     "${TCNN_DEPENDENCIES}/fmt"
+#     "${TCNN_DEPENDENCIES}/cutlass"
+# )
+# 
+# set(
+#     TCNN_FILES
+#     "${TCNN_DEPENDENCIES}/json/json.hpp"
+# )
+
 include_directories(
   "."
   "inc"
@@ -247,7 +266,11 @@ include_directories(
   ${IL_INCLUDE_DIR}
   ${ASSIMP_INCLUDE_DIRS}
   ${MDL_SDK_INCLUDE_DIRS}
+  ${TCNN_DEPENDENCIES}
+  ${TCNN_INCLUDE_DIRS}
 )
+
+# add_subdirectory("${TCNN_INCLUDE_DIRS}/..")
 
 add_definitions(
   # Disable warnings for file operations fopen etc.

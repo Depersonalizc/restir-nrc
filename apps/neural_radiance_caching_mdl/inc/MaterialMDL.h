@@ -34,6 +34,8 @@
 #include <cuda.h>
 #include <vector_types.h>
 
+#include <tiny-cuda-nn/vec_json.h>
+
 #include <mi/mdl_sdk.h>
 #include <mi/base/config.h>
 
