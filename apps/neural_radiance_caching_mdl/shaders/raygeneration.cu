@@ -104,6 +104,8 @@ __forceinline__ __device__ void sampleVolumeScattering(const float2 xi, const fl
 	dir = tbn.transformToWorld(d);
 }
 
+#if 0
+
 __forceinline__ __device__ float3 integrator(PerRayData& prd)
 {
 	// The integrator starts with black radiance and full path throughput.
@@ -480,6 +482,7 @@ extern "C" __global__ void __raygen__path_tracer()
 #endif // USE_FP32_OUTPUT
 	}
 }
+#endif
 
 namespace {
 
@@ -487,16 +490,22 @@ __forceinline__ __device__ int tileIndex(const uint2& launchIndex)
 {
 	const auto tileIndexX = launchIndex.x / sysData.pf.tileSize.x;
 	const auto tileIndexY = launchIndex.y / sysData.pf.tileSize.y;
-	const auto numTilesX = sysData.resolution.x / sysData.pf.tileSize.x;
 
-	return tileIndexY * numTilesX + tileIndexX;
+	return tileIndexY * sysData.pf.numTiles.x + tileIndexX;
+}
+
+__forceinline__ __device__ bool isBoundaryRay(const uint2& launchIndex)
+{
+	const auto xEnd = sysData.pf.numTiles.x * sysData.pf.tileSize.x;
+	const auto yEnd = sysData.pf.numTiles.y * sysData.pf.tileSize.y;
+
+	return (launchIndex.x >= xEnd || launchIndex.y >= yEnd);
 }
 
 __forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
 {
 	// Discard boundary tile
-	if (launchIndex.x + sysData.pf.tileSize.x > sysData.resolution.x ||
-		launchIndex.y + sysData.pf.tileSize.y > sysData.resolution.y)
+	if (isBoundaryRay(launchIndex))
 	{
 		return false;
 	}
@@ -782,7 +791,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 		}
 		buffer[index] = result;
 #else // if !USE_TIME_VIEW
-		//if (sysData.pf.iterationIndex > 0)
+		if (sysData.pf.iterationIndex > 0)
 		{
 			const float3 dst = make_float3(buffer[index]); // RGB24F
 			radiance = lerp(dst, radiance, 1.0f / float(sysData.pf.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
