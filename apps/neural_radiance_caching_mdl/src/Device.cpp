@@ -286,12 +286,8 @@ Device::Device(const int ordinal,
 	CU_CHECK(cuDeviceGetLuid(m_deviceLUID, &m_nodeMask, m_cudaDevice));
 #endif
 
-	if (m_count > 1)
-	{
-		// FIXME Only load this on the primary device.
-		CU_CHECK(cuModuleLoad(&m_moduleCompositor, "./neural_radiance_caching_mdl_core/compositor.ptx"));
-		CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
-	}
+	// Load native CUDA kernel modules
+	loadNativeModules();
 
 	// Create Optix context
 	{
@@ -310,7 +306,7 @@ Device::Device(const int ordinal,
 	// OptiX, m_deviceProperty
 	initDeviceProperties();
 
-	m_d_systemData = reinterpret_cast<SystemData *>(memAlloc(sizeof(SystemData), 16)); // Currently 8 byte alignment would be enough.
+	m_d_systemData = reinterpret_cast<SystemData *>(memAlloc(sizeof(SystemData), alignof(SystemData))); // Currently 8 byte alignment would be enough.
 
 	// Initialize all renderer system data.
 	m_systemData.deviceCount = m_count; // The number of active devices.
@@ -372,8 +368,8 @@ Device::Device(const int ordinal,
 #if (OPTIX_VERSION >= 70100)
 	// New in OptiX 7.1.0.
 	// This renderer supports triangles and cubic B-splines.
-	m_pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE |
-		OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_CUBIC_BSPLINE;
+	m_pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE 
+								 | OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_CUBIC_BSPLINE;
 #endif
 
 	// OptixPipelineLinkOptions
@@ -396,7 +392,7 @@ Device::Device(const int ordinal,
 	// OptixProgramGroupOptions
 	//m_pgo = {}; // This is a just placeholder.
 
-	// NRC Allocations
+	// (Static) NRC Allocations
 	initNRC();
 }
 
@@ -411,10 +407,11 @@ Device::~Device()
 		CU_CHECK_NO_THROW(cuGraphicsUnregisterResource(m_cudaGraphicsResource));
 	}
 
-	if (m_moduleCompositor)
-	{
-		CU_CHECK_NO_THROW(cuModuleUnload(m_moduleCompositor));
-	}
+	auto unloadModule = [](auto hmod) {
+		if (hmod) CU_CHECK_NO_THROW(cuModuleUnload(hmod));
+	};
+	unloadModule(m_moduleCompositor);
+	unloadModule(m_moduleNRCHelpers);
 
 	for (const auto &[_, texture] : m_mapTextures) 
 	{
@@ -658,6 +655,33 @@ void Device::initDeviceProperties()
 #endif
 }
 
+void Device::loadNativeModules()
+{
+	// Compositor
+	if (m_count > 1)
+	{
+		// FIXME Only load this on the primary device.
+		CU_CHECK(cuModuleLoad(&m_moduleCompositor, "./neural_radiance_caching_mdl_core/compositor.ptx"));
+		CU_CHECK(cuModuleGetFunction(&m_functionCompositor, m_moduleCompositor, "compositor"));
+	}
+
+	
+	// This single module contains all the helper kernels.
+	{
+		CU_CHECK(cuModuleLoad(&m_moduleNRCHelpers, "./neural_radiance_caching_mdl_core/nrc_helpers.ptx"));
+
+		std::size_t sysDataSize{};
+		CU_CHECK(cuModuleGetGlobal(reinterpret_cast<CUdeviceptr*>(&m_d_systemData_nrcHelpers), &sysDataSize, m_moduleNRCHelpers, "sysData"));
+		MY_ASSERT(sysDataSize == sizeof(SystemData));
+	}
+
+	// Get handles to the helper functions
+	CU_CHECK(cuModuleGetFunction(&m_fnPlaceholder, m_moduleNRCHelpers, "placeholder")); // just testing..
+	CU_CHECK(cuModuleGetFunction(&m_fnAccumulateRenderRadiance, m_moduleNRCHelpers, "accumulate_render_radiance"));
+	CU_CHECK(cuModuleGetFunction(&m_fnPropagateTrainRadiance, m_moduleNRCHelpers, "propagate_train_radiance"));
+
+	// ...
+}
 
 OptixResult Device::initFunctionTable()
 {
@@ -1099,6 +1123,7 @@ void Device::initSBT(const std::vector<OptixProgramGroup>& programGroups)
 	}
 }
 
+// Allocate static NRC buffers. Initialize train records count at 0.
 void Device::initNRC()
 {
 	using namespace nrc;
@@ -1108,44 +1133,59 @@ void Device::initNRC()
 
 	// Init host side CB. Allocate buffers
 	m_nrcControlBlock.numTrainingRecords = 0;
-	m_nrcControlBlock.trainingRecords = reinterpret_cast<TrainingRecord*>(
+
+	auto& staticBufs = m_nrcControlBlock.bufStatic;
+	staticBufs.trainingRecords = reinterpret_cast<TrainingRecord*>(
 		memAlloc(sizeof(TrainingRecord) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(TrainingRecord)));
-	m_nrcControlBlock.trainingRadianceTargets = reinterpret_cast<float3*>(
+	staticBufs.trainingRadianceTargets = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
 
-	m_nrcControlBlock.radianceQueriesTraining = reinterpret_cast<RadianceQuery*>(
+	staticBufs.radianceQueriesTraining = reinterpret_cast<RadianceQuery*>(
 		memAlloc(sizeof(RadianceQuery) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(RadianceQuery)));
+	staticBufs.radianceResultsTraining = reinterpret_cast<float3*>(
+		memAlloc(sizeof(float3) * NUM_TRAINING_RECORDS_PER_FRAME, alignof(float3)));
 
-	// Copy the control block over to device
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
+	// NOTE: m_nrcControlBlock.bufDynamic are allocated in render() on resize
+
+	// Copy the static buffers over to device
+	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufStatic), &staticBufs, sizeof(staticBufs), m_cudaStream));
 }
 
-// Resize NRC buffers according to the current screensize
+// Resize dynamic NRC buffers according to the current screensize
 void Device::resizeNRC()
 {
 	using namespace nrc;
 
 	const auto numPixels = m_systemData.resolution.x * m_systemData.resolution.y;
 
-	// m_nrcControlBlock.lastRenderThroughput
-	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.lastRenderThroughput));
-	m_nrcControlBlock.lastRenderThroughput = reinterpret_cast<float3*>(
+	auto& dynBufs = m_nrcControlBlock.bufDynamic;
+
+	// dynBufs.lastRenderThroughput (#pixels)
+	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.lastRenderThroughput));
+	dynBufs.lastRenderThroughput = reinterpret_cast<float3*>(
 		memAlloc(sizeof(float3) * numPixels, alignof(float3)));
 
-	// m_nrcControlBlock.radianceQueriesInference
-	memFree(reinterpret_cast<CUdeviceptr>(m_nrcControlBlock.radianceQueriesInference));
-	auto numQueriesInference = numPixels;
-	{
-		const auto nTilesXMax = m_systemData.resolution.x / 2;
-		const auto nTilesYMax = m_systemData.resolution.y / 2;
-		numQueriesInference += (nTilesXMax * nTilesYMax);
-	}
-	m_nrcControlBlock.radianceQueriesInference = reinterpret_cast<RadianceQuery*>(
-		memAlloc(sizeof(RadianceQuery) * numQueriesInference, alignof(RadianceQuery)));
+	// dynBufs
+	// .radianceQueriesInference
+	// .radianceResultsInference (~1.25#pixels)
+	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceQueriesInference));
+	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.radianceResultsInference));
 
-	// Copy the control block over to device
-	// TODO: Copy only the changed part.
-	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), &m_nrcControlBlock, sizeof(ControlBlock), m_cudaStream));
+	const auto numTilesMax = (m_systemData.resolution.x / 2) * (m_systemData.resolution.y / 2); // #tiles at min tile size (2x2)
+	const auto numQueriesInference = numPixels + numTilesMax;
+
+	dynBufs.radianceQueriesInference = reinterpret_cast<RadianceQuery*>(
+		memAlloc(sizeof(RadianceQuery) * numQueriesInference, alignof(RadianceQuery)));
+	dynBufs.radianceResultsInference = reinterpret_cast<float3*>(
+		memAlloc(sizeof(float3) * numQueriesInference, alignof(float3)));
+	
+	// dynBufs.trainSuffixEndVertices
+	memFree(reinterpret_cast<CUdeviceptr>(dynBufs.trainSuffixEndVertices));
+	dynBufs.trainSuffixEndVertices = reinterpret_cast<TrainingSuffixEndVertex*>(
+		memAlloc(sizeof(TrainingSuffixEndVertex) * numTilesMax, alignof(TrainingSuffixEndVertex)));
+
+	//// Copy the new buffer addresses to device
+	//CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufDynamic), &dynBufs, sizeof(dynBufs), m_cudaStream));
 }
 
 void Device::initCameras(const std::vector<CameraDefinition>& cameras)
@@ -1911,28 +1951,31 @@ void Device::render(const unsigned int iterationIndex,
 	// PER-FRAME: Update iteration/subframe index
 	m_systemData.pf.iterationIndex = iterationIndex;
 	m_systemData.pf.totalSubframeIndex = totalSubframeIndex;
+
+	const auto screenSize = m_systemData.resolution.x * m_systemData.resolution.y;
 	
+	bool isDirtyNRCDynamicBuffers{ false };
 	if (m_isDirtyOutputBuffer) [[unlikely]]
 	{
 		// Adjust the tile size due to screen-size change
 		if (!m_bufferHost.empty()) [[likely]]
 		{
-			const auto scale = static_cast<float>(m_systemData.resolution.x * m_systemData.resolution.y)
-				             / static_cast<float>(m_bufferHost.size());
+			const auto scale = static_cast<float>(screenSize) / static_cast<float>(m_bufferHost.size());
 			adjustTileSize(m_nrcControlBlock.numTrainingRecords * scale);
+			std::cout << "[HOST] Tile size adjusted to: " << m_systemData.pf.tileSize.x << ',' << m_systemData.pf.tileSize.y << "after screen resize\n";
 		}
 
 		MY_ASSERT(buffer != nullptr);
 		if (*buffer == nullptr) // The buffer is nullptr for the device which should allocate the full resolution buffers. This device is called first!
 		{
 			// Only allocate the host buffer once, not per each device.
-			m_bufferHost.resize(m_systemData.resolution.x * m_systemData.resolution.y);
+			m_bufferHost.resize(screenSize);
 
 			// Note that this requires that all other devices have finished accessing this buffer, but that is automatically the case
 			// after calling Device::setState() which is the only place which can change the resolution.
 			memFree(m_systemData.outputBuffer); // This is asynchronous and the pointer can be 0.
 #if USE_FP32_OUTPUT
-			m_systemData.outputBuffer = memAlloc(sizeof(float4) * m_systemData.resolution.x * m_systemData.resolution.y, sizeof(float4));
+			m_systemData.outputBuffer = memAlloc(sizeof(float4) * screenSize, sizeof(float4));
 #else
 			m_systemData.outputBuffer = memAlloc(sizeof(Half4) * m_systemData.resolution.x * m_systemData.resolution.y, sizeof(Half4));
 #endif
@@ -1978,9 +2021,9 @@ void Device::render(const unsigned int iterationIndex,
 			case INTEROP_MODE_PBO:
 				glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbo);
 #if USE_FP32_OUTPUT
-				glBufferData(GL_PIXEL_UNPACK_BUFFER, m_systemData.resolution.x * m_systemData.resolution.y * sizeof(float4), nullptr, GL_DYNAMIC_DRAW);
+				glBufferData(GL_PIXEL_UNPACK_BUFFER, screenSize * sizeof(float4), nullptr, GL_DYNAMIC_DRAW);
 #else
-				glBufferData(GL_PIXEL_UNPACK_BUFFER, m_systemData.resolution.x * m_systemData.resolution.y * sizeof(Half4), nullptr, GL_DYNAMIC_DRAW);
+				glBufferData(GL_PIXEL_UNPACK_BUFFER, screenSize * sizeof(Half4), nullptr, GL_DYNAMIC_DRAW);
 #endif
 				glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
@@ -2000,11 +2043,12 @@ void Device::render(const unsigned int iterationIndex,
 #endif
 		}
 
-		// Resize NRC buffers
+		// Resize dynamic NRC buffers
 		resizeNRC();
+		isDirtyNRCDynamicBuffers = true;
 
 		m_isDirtyOutputBuffer = false; // Buffer is allocated with new size.
-		m_isDirtySystemData   = true;  // Now the sysData on the device needs to be updated.
+		m_isDirtySystemData   = true;  // Now the entire sysData on the device needs to be updated.
 	}
 
 	// PER-FRAME: Update the training index, shared across all tiles
@@ -2014,12 +2058,17 @@ void Device::render(const unsigned int iterationIndex,
 		m_systemData.pf.tileTrainingIndex = rand() % tileSize;
 	}
 
+	// PER-FRAME: Update the number of tiles
+	m_systemData.pf.numTiles = { m_systemData.resolution.x / m_systemData.pf.tileSize.x,
+								 m_systemData.resolution.y / m_systemData.pf.tileSize.y };
+
 	// We simpy sync here because this NRC demo only supports interactive mode on single device
 	synchronizeStream();
 	
 	if (m_isDirtySystemData) // Update the whole SystemData block because more than per-frame data has changed. This normally means a GUI interaction.
 	{
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData), m_cudaStream));
+		CU_CHECK(cuMemcpyDtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_systemData_nrcHelpers), reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), m_cudaStream));
 		m_isDirtySystemData = false;
 	}
 	else // Only update the per-frame data
@@ -2027,12 +2076,17 @@ void Device::render(const unsigned int iterationIndex,
 		// NOTE This won't work for async launches, but single-frame benchmarking doesn't make sense for NRC anyway.
 		static constexpr auto perFrameDataSize = sizeof(SystemData) - offsetof(SystemData, pf);
 		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->pf), &m_systemData.pf, perFrameDataSize, m_cudaStream));
+		CU_CHECK(cuMemcpyDtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData_nrcHelpers->pf), reinterpret_cast<CUdeviceptr>(&m_d_systemData->pf), perFrameDataSize, m_cudaStream));
 	}
 
-	// TODO: Reset the per-frame data of the NRC block
+	if (isDirtyNRCDynamicBuffers)
 	{
-		CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 0, 1ull, m_cudaStream));
+		CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->bufDynamic), 
+								   &m_nrcControlBlock.bufDynamic, sizeof(m_nrcControlBlock.bufDynamic), m_cudaStream));
 	}
+
+	// Reset the per-frame data of the NRC block (currently just numTrainingRecords)
+	CU_CHECK(cuMemsetD32Async(reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 0, 1ull, m_cudaStream));
 
 	// Path Tracing: 
 	// - Generate training data for NRC
@@ -2046,42 +2100,111 @@ void Device::render(const unsigned int iterationIndex,
 		//OPTIX_CHECK(m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1));
 	}
 
-	// Sync with Device to get all the training records
-	// TODO: Only download the per-frame data fields.
-	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock, reinterpret_cast<CUdeviceptr>(m_systemData.nrcCB), sizeof(nrc::ControlBlock), m_cudaStream));
+	// Sync with Device the per-frame data of the NRC block (currently just numTrainingRecords)
+	CU_CHECK(cuMemcpyDtoHAsync(&m_nrcControlBlock.numTrainingRecords, 
+							   reinterpret_cast<CUdeviceptr>(&m_systemData.nrcCB->numTrainingRecords), 
+							   sizeof(m_nrcControlBlock.numTrainingRecords), m_cudaStream));
 
 	synchronizeStream();
-	std::cout << "[HOST] #Training records generated: " << m_nrcControlBlock.numTrainingRecords << '\n';
+	std::cout << "[HOST] #Training records generated: " << m_nrcControlBlock.numTrainingRecords
+			  << " #Tiles: " << m_systemData.pf.numTiles.x * m_systemData.pf.numTiles.y << '\n';
 
-	// Inference at
-	// 1. The end of short rendering paths (#Actual Queries <= #Rays; some could miss early into environment)
+	// [TCNN Inference]
+	// 1. @ The end of short rendering paths (#Actual Queries <= #Rays; some could miss early into environment)
 	//	  These results are used for rendering. See next section.
-	// 2. The end of long training paths (#Actual Queries <= #Tiles; some could be unbiased and RR-terminated)
+	// 2. @ The end of long training paths (#Actual Queries <= #Tiles; some could be unbiased and RR-terminated)
 	//    These results are used as ground-truth radiance for training.
-	// INPUT: RadianceQuery[#Rays + #Tiles]
+	// ---------------------------------------------------------------------------------------
+	// INPUT : radianceQueriesInference[#pixels + #tiles]
+	// OUTPUT: radianceResultsInference[#pixels + #tiles]
 	{
+		m_nrcControlBlock.bufDynamic.radianceQueriesInference; // INPUT
+
+		m_nrcControlBlock.bufDynamic.radianceResultsInference; // OUTPUT
+
+		// For test: Set radianceResultsInference[:#pixels] to be RED
 		
 	}
 
-	// Accumulate the inferenced radiance for short rendering paths to output buffer
-	// INPUT: InferredRadiance[#Rays]
+	// Kernel launch config
+	CUlaunchConfig cfg{.gridDimZ = 1u, 
+					   .blockDimX = 32u, .blockDimY = 32u, .blockDimZ = 1u,
+					   .hStream = m_cudaStream};
+
+#if 1
+	// [KERNEL]
+	// Accumulate the inferenced radiance at the end of short rendering paths to output buffer
+	// ---------------------------------------------------------------------------------------
+	// INPUT : radianceResultsInference[:#pixels]
+	//         lastRenderThroughput[:#pixels]
+	// OUTPUT: m_systemData.outputBuffer[#pixels] (+=)
 	{
+		void* args[] = { /*float3 *endRenderRadiance   */ &m_nrcControlBlock.bufDynamic.radianceResultsInference,
+						 /*float3 *endRenderThroughput */ &m_nrcControlBlock.bufDynamic.lastRenderThroughput };
 
+		cfg.gridDimX = (m_systemData.resolution.x + cfg.blockDimX - 1) / cfg.blockDimX;
+		cfg.gridDimY = (m_systemData.resolution.y + cfg.blockDimY - 1) / cfg.blockDimY;
+		
+		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX 
+			   && cfg.gridDimX > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
+
+		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnAccumulateRenderRadiance, args, nullptr));
 	}
-
-	// Back-propagate the (queried/unbiased) radiance from the end of each long path (= #Tiles)
-	// This gets all training records ready for training.
+#endif
+#if 1
+	// [KERNEL]
+	// Back-propagate the (queried/unbiased) radiance from the end of train suffixes (#tiles).
+	// This gets ready all radiance targets for training.
+	// ---------------------------------------------------------------------------------------
+	// INPUT : trainSuffixEndVertices[:#tiles]
+	//				 .startTrainRecord indexes into `trainingRecords` to initiate radiance prop
+	//				 .radianceMask masks the inferred radiance `radianceResultsInference`)
+	//		   radianceResultsInference[#pixels:#pixels+#tiles]
+	//         trainingRecords[65536]
+	// OUTPUT: trainingRadianceTargets[65536] (+=)
 	{
+		// Offset by #pixels to get to the radiance at end of train suffixes.
+		float3 *endTrainingRadiance = m_nrcControlBlock.bufDynamic.radianceResultsInference + screenSize;
+		void* args[] = { /*TrainingSuffixEndVertex *trainSuffixEndVertices */ &m_nrcControlBlock.bufDynamic.trainSuffixEndVertices,
+						 /*float3                  *endTrainRadiance       */ &endTrainingRadiance,
+						 /*TrainingRecord          *trainRecords           */ &m_nrcControlBlock.bufStatic.trainingRecords,
+						 /*float3                  *trainRadianceTargets   */ &m_nrcControlBlock.bufStatic.trainingRadianceTargets};
 
+		cfg.gridDimX = (m_systemData.pf.numTiles.x + cfg.blockDimX - 1) / cfg.blockDimX;
+		cfg.gridDimY = (m_systemData.pf.numTiles.y + cfg.blockDimY - 1) / cfg.blockDimY;
+		
+		MY_ASSERT(cfg.gridDimX > 0 && cfg.gridDimX <= m_deviceAttribute.maxGridDimX 
+			   && cfg.gridDimX > 0 && cfg.gridDimY <= m_deviceAttribute.maxGridDimY);
+
+		CU_CHECK(cuLaunchKernelEx(&cfg, m_fnPropagateTrainRadiance, args, nullptr));
 	}
-
+#endif
+	// [KERNEL]
 	// Shuffle the training records to avoid spatial correlation.
-	// Also repeat samples if the raytracer undersampled.
+	// Also duplicate samples if the raytracer undersampled.
+	// ---------------------------------------------------------------------------------------
+	// INPUT : radianceQueriesTraining[:min(numTrainingRecords, 65536)]
+	//         trainingRadianceTargets[:min(numTrainingRecords, 65536)]
+	// OUTPUT: radianceQueriesTraining[65536]
+	//         trainingRadianceTargets[65536]
 	{
-
+		const auto actualNumRecords = std::min(m_nrcControlBlock.numTrainingRecords, nrc::NUM_TRAINING_RECORDS_PER_FRAME);
+		m_nrcControlBlock.bufStatic.radianceQueriesTraining;
+		m_nrcControlBlock.bufStatic.trainingRadianceTargets;
 	}
 
-	// Adjust the tile size according to #records
+	// [TCNN Training]
+	// INPUT: radianceQueriesTraining[65536], (radianceResultsTraining[65536],) trainingRadianceTargets[65536]
+	{
+		m_nrcControlBlock.bufStatic.radianceQueriesTraining;
+		m_nrcControlBlock.bufStatic.radianceResultsTraining;
+		
+		m_nrcControlBlock.bufStatic.trainingRadianceTargets;
+	}
+
+
+
+	// Adjust the tile size according to #records generated
 	adjustTileSize(m_nrcControlBlock.numTrainingRecords);
 	std::cout << "[HOST] Tile size: " << m_systemData.pf.tileSize.x << ',' << m_systemData.pf.tileSize.y << '\n';
 }

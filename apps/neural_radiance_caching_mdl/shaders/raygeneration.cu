@@ -31,6 +31,7 @@
 #include <optix.h>
 
 #include "system_data.h"
+#include "neural_radiance_caching.h"
 #include "per_ray_data.h"
 #include "shader_common.h"
 #include "half_common.h"
@@ -102,6 +103,8 @@ __forceinline__ __device__ void sampleVolumeScattering(const float2 xi, const fl
 
 	dir = tbn.transformToWorld(d);
 }
+
+#if 0
 
 __forceinline__ __device__ float3 integrator(PerRayData& prd)
 {
@@ -479,14 +482,30 @@ extern "C" __global__ void __raygen__path_tracer()
 #endif // USE_FP32_OUTPUT
 	}
 }
+#endif
 
 namespace {
+
+__forceinline__ __device__ int tileIndex(const uint2& launchIndex)
+{
+	const auto tileIndexX = launchIndex.x / sysData.pf.tileSize.x;
+	const auto tileIndexY = launchIndex.y / sysData.pf.tileSize.y;
+
+	return tileIndexY * sysData.pf.numTiles.x + tileIndexX;
+}
+
+__forceinline__ __device__ bool isBoundaryRay(const uint2& launchIndex)
+{
+	const auto xEnd = sysData.pf.numTiles.x * sysData.pf.tileSize.x;
+	const auto yEnd = sysData.pf.numTiles.y * sysData.pf.tileSize.y;
+
+	return (launchIndex.x >= xEnd || launchIndex.y >= yEnd);
+}
 
 __forceinline__ __device__ bool isTrainingRay(const uint2& launchIndex)
 {
 	// Discard boundary tile
-	if (launchIndex.x + sysData.pf.tileSize.x > sysData.resolution.x ||
-		launchIndex.y + sysData.pf.tileSize.y > sysData.resolution.y)
+	if (isBoundaryRay(launchIndex))
 	{
 		return false;
 	}
@@ -517,8 +536,10 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 	prd.areaThreshold        = INFINITY;
 	prd.areaSpread           = 0.0f;
 	prd.lastTrainRecordIndex = nrc::TRAIN_RECORD_INDEX_NONE;
-	//prd.lastRenderThroughput = prd.throughput;
-	prd.lastRenderThroughput = float3{ 0.0f, 1000000.0f, 0.0f };
+	prd.lastRenderThroughput = make_float3(0.0f);
+#if 0
+	prd.lastRenderThroughput = float3{ 0.0f, 1000000.0f, 0.0f }; // super green
+#endif
 
 	// Nested material handling.
 	// Small stack of MATERIAL_STACK_SIZE = 4 entries of which the first is vacuum.
@@ -619,9 +640,9 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 
 			if (probability < rng(prd.seed)) // Paths with lower probability to continue are terminated earlier.
 			{
-				// TODO: End the train suffix by a zero-radiance unbiased 
+				// End the train suffix by a zero-radiance unbiased 
 				// terminal vertex that links to thePrd->lastTrainRecordIndex.
-				//::endTrainSuffixUnbiased(prd);
+				nrc::endTrainSuffixUnbiased(prd);
 				break;
 			}
 
@@ -640,16 +661,14 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 		// Max #bounces exceeded
 		if (depth >= sysData.pathLengths.y)
 		{
-			const bool isTrain = prd.flags & FLAG_TRAIN;
-
 			prd.lastRenderThroughput = make_float3(0.f);
 
-			// Terminate training chain
-			if (isTrain)
+			// Terminate training suffix
+			if (prd.flags & FLAG_TRAIN)
 			{
-				// TODO: End the train suffix by a zero-radiance unbiased 
+				// End the train suffix by a zero-radiance unbiased 
 				// terminal vertex that links to thePrd->lastTrainRecordIndex.
-				//::endTrainSuffixUnbiased(prd);
+				nrc::endTrainSuffixUnbiased(prd);
 			}
 
 			break;
@@ -658,6 +677,7 @@ __forceinline__ __device__ float3 nrcIntegrator(PerRayData& prd)
 
 	return prd.radiance;
 }
+
 }
 
 extern "C" __global__ void __raygen__nrc_path_tracer()
@@ -684,6 +704,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	// Set ray flags
 	prd.flags = 0;
 
+#if 1
 	const bool isDebug = (theLaunchIndex.x == theLaunchDim.x / 2)
 						 && (theLaunchIndex.y == theLaunchDim.y / 2)
 						 && (sysData.pf.iterationIndex == 0);
@@ -691,6 +712,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	{
 		prd.flags |= FLAG_DEBUG;
 	}
+#endif
 
 	const bool isTrain = ::isTrainingRay(theLaunchIndex);
 	if (isTrain)
@@ -698,10 +720,12 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 		prd.flags |= FLAG_TRAIN;
 
 		// Set about 1/16 of training ray to be unbiased (terminated with RR)
-		static constexpr auto TRAIN_UNBIASED_RATIO = 1.f / 16.f;
-		if (rng(prd.seed) < TRAIN_UNBIASED_RATIO) {
+		if (rng(prd.seed) < nrc::TRAIN_UNBIASED_RATIO) {
 			prd.flags |= FLAG_TRAIN_UNBIASED;
 		}
+
+		// Record tile index.
+		prd.tileIndex = ::tileIndex(theLaunchIndex);
 	}
 
 // DEBUG INFO
@@ -726,7 +750,8 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 	float3 radiance = ::nrcIntegrator(prd);
 
 	// Record the last throughput.
-	sysData.nrcCB->lastRenderThroughput[index] = prd.lastRenderThroughput;
+	float3* lastThroughputBuffer = sysData.nrcCB->bufDynamic.lastRenderThroughput;
+	lastThroughputBuffer[index] = prd.lastRenderThroughput;
 
 #if USE_DEBUG_EXCEPTIONS
 	// DEBUG Highlight numerical errors.
@@ -766,7 +791,7 @@ extern "C" __global__ void __raygen__nrc_path_tracer()
 		}
 		buffer[index] = result;
 #else // if !USE_TIME_VIEW
-		//if (sysData.pf.iterationIndex > 0)
+		if (sysData.pf.iterationIndex > 0)
 		{
 			const float3 dst = make_float3(buffer[index]); // RGB24F
 			radiance = lerp(dst, radiance, 1.0f / float(sysData.pf.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.

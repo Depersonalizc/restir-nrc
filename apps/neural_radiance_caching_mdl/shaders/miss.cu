@@ -30,6 +30,7 @@
 
 #include <optix.h>
 
+#include "neural_radiance_caching.h"
 #include "per_ray_data.h"
 #include "light_definition.h"
 #include "shader_common.h"
@@ -82,11 +83,11 @@ extern "C" __global__ void __miss__env_null()
 		thePrd->lastRenderThroughput = make_float3(0.f);
 	}
 
-	// TODO: Terminate if training
+	// Terminate (unbiased) if training.
 	const bool isTrain = thePrd->flags & FLAG_TRAIN;
 	if (isTrain)
 	{
-
+		nrc::endTrainSuffixUnbiased(*thePrd);
 	}
 }
 
@@ -127,7 +128,7 @@ extern "C" __global__ void __miss__env_constant()
 	// !! Add the BSDF-sampling part of the MIS to last vertex's target radiance.
     if (thePrd->lastTrainRecordIndex >= 0) [[unlikely]]
     {
-        sysData.nrcCB->trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
+        sysData.nrcCB->bufStatic.trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
     }
 
 	// Terminate rendering path if it hasn't
@@ -139,11 +140,11 @@ extern "C" __global__ void __miss__env_constant()
 		thePrd->lastRenderThroughput = make_float3(0.f);
 	}
 
-	// TODO: Terminate if training
+	// Terminate (unbiased) if training.
 	const bool isTrain = thePrd->flags & FLAG_TRAIN;
 	if (isTrain)
 	{
-
+		nrc::endTrainSuffixUnbiased(*thePrd);
 	}
 }
 
@@ -197,7 +198,7 @@ extern "C" __global__ void __miss__env_sphere()
 	// !! Add the BSDF-sampling part of the MIS to last vertex's target radiance.
     if (thePrd->lastTrainRecordIndex >= 0) [[unlikely]]
     {
-        sysData.nrcCB->trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
+        sysData.nrcCB->bufStatic.trainingRadianceTargets[thePrd->lastTrainRecordIndex] += emission;
     }
 
 	// Terminate rendering path if it hasn't
@@ -209,10 +210,10 @@ extern "C" __global__ void __miss__env_sphere()
 		thePrd->lastRenderThroughput = make_float3(0.f);
 	}
 
-	// TODO: Terminate if training
+	// Terminate (unbiased) if training.
 	const bool isTrain = thePrd->flags & FLAG_TRAIN;
 	if (isTrain)
 	{
-
+		nrc::endTrainSuffixUnbiased(*thePrd);
 	}
 }
