@@ -31,8 +31,6 @@
 #include "inc/Parser.h"
 #include "inc/Raytracer.h"
 
-
-
 #include <algorithm>
 #include <fstream>
 #include <iostream>

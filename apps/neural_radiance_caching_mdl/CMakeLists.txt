@@ -124,6 +124,14 @@ set( NVPRO_MATH
   dp/math/src/Trafo.cpp
 )
 
+set (NETWORK
+  network/nrc_network.cu
+)
+
+set (NETWORK_HEADERS
+  network/nrc_network.h
+)
+
 set( HEADERS
   inc/Application.h
   inc/Arena.h
@@ -247,6 +255,19 @@ source_group( "kernels"         FILES ${KERNELS} )
 source_group( "shaders_headers" FILES ${SHADERS_HEADERS} )
 source_group( "prg"             FILES ${PROGRAM_MODULES} )
 source_group( "ptx"             FILES ${KERNEL_MODULES} )
+source_group( "network"         FILES ${NETWORK})
+source_group( "network_headers" FILES ${NETWORK_HEADERS})
+
+# Network Compilation
+# added for tcnn
+NVCUDA_COMPILE_MODULE(
+  SOURCES ${NETWORK}
+  DEPENDENCIES ${NETWORK_HEADERS}
+  TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_mdl_core"
+  EXTENSION ".ptx"
+  GENERATED_FILES KERNEL_MODULES
+  NVCC_OPTIONS "--ptx" "--machine=64" "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "--extended-lambda" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders" "-I${TCNN_INCLUDE_DIRS}" "-I${TCNN_DEPENDENCIES}/fmt/include" -"I${TCNN_DEPENDENCIES}"
+)
 
 # added for tcnn
 # set(
@@ -302,6 +323,8 @@ add_executable( neural_radiance_caching_mdl
   ${KERNELS}
   ${PROGRAM_MODULES}
   ${KERNEL_MODULES}
+  ${NETWORK}
+  ${NETWORK_HEADERS}
 )
 
 target_link_libraries( neural_radiance_caching_mdl

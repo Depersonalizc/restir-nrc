@@ -82,7 +82,7 @@
 #ifndef TCNN_MIN_GPU_ARCH
 // 75 for rtx2060
 // check for more values at https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/
-#define TCNN_MIN_GPU_ARCH 75
+#define TCNN_MIN_GPU_ARCH 50
 
 #endif
 
