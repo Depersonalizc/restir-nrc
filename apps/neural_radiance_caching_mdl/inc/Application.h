@@ -57,6 +57,7 @@
 #include "inc/Timer.h"
 
 #include "inc/MaterialMDL.h"
+#include "network/nrc_network.h"
 
 #include <dp/math/Matmnt.h>
 

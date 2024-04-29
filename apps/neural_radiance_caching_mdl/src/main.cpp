@@ -35,6 +35,8 @@
 #include <algorithm>
 #include <iostream>
 
+#include "network/nrc_network.h"
+
 
 static void callbackError(int error, const char* description)
 {
@@ -69,6 +71,11 @@ static int runApp(const Options& options)
 
     std::unique_ptr<Application> app{};
     try {
+        // begin random testing of model in main
+        NeuralRadianceCache* nrc = new NeuralRadianceCache();
+        nrc->initialize(PositionEncoding::Frequency, 5, 0.02);
+        // end random testing of model
+
         app = std::make_unique<Application>(window, options);
         if (auto mode = std::max(0, options.getMode()); mode == 0) // Interactive, default.
         {

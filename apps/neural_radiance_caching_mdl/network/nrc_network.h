@@ -6,10 +6,6 @@
 #pragma once
 
 #include <cuda.h>
-#include <tiny-cuda-nn/common.h>
-#include <cuda_runtime.h>
-#include <tiny-cuda-nn/config.h>
-#include <memory>
 
 enum class PositionEncoding {
     TriangleWave,
