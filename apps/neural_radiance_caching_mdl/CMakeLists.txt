@@ -1,4 +1,4 @@
-# Copyright (c) 2013-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2012-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -28,10 +28,15 @@
 # Use FindCUDAToolkit.cmake added in CMake 3.17 instead.
 cmake_minimum_required(VERSION 3.17)
 
-project( neural_radiance_caching_mdl )
+project( neural_radiance_caching_mdl
+	 LANGUAGES CXX CUDA
+)
 message("\nPROJECT_NAME = " "${PROJECT_NAME}")
 
 set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CUDA_STANDARD 14)
+set (CMAKE_CUDA_STANDARD_REQUIRED ON)
+set (CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenGL REQUIRED)
 find_package(GLFW REQUIRED)
@@ -39,7 +44,9 @@ find_package(GLEW REQUIRED)
 find_package(CUDAToolkit 10.0 REQUIRED)
 find_package(DevIL_1_8_0 REQUIRED)
 find_package(ASSIMP REQUIRED)
-find_package(TCNN REQUIRED)
+#find_package(TCNN REQUIRED)
+
+get_target_property(TCNN_INCLUDE_DIRS tiny-cuda-nn INCLUDE_DIRECTORIES)
 
 if(MDL_SDK_FOUND)
   message("MDL_SDK_INCLUDE_DIRS = " "${MDL_SDK_INCLUDE_DIRS}")
@@ -47,7 +54,7 @@ else()
   message(FATAL_ERROR "MDL SDK not found.")
 endif()
 
-if(TCNN_FOUND)
+if(TCNN_INCLUDE_DIRS)
   message("TCNN_INCLUDE_DIRS = " "${TCNN_INCLUDE_DIRS}")
 else()
   message(FATAL_ERROR "TCNN not found.")
@@ -233,7 +240,7 @@ NVCUDA_COMPILE_MODULE(
   TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_mdl_core"
   EXTENSION "${OPTIX_MODULE_EXTENSION}"
   GENERATED_FILES PROGRAM_MODULES
-  NVCC_OPTIONS "${OPTIX_PROGRAM_TARGET}" "--machine=64" "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders" 
+  NVCC_OPTIONS "${OPTIX_PROGRAM_TARGET}" "--machine=64" "--gpu-architecture=compute_89" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
 )
 
 # The native CUDA Kernels will be translated to *.ptx unconditionally.
@@ -243,19 +250,19 @@ NVCUDA_COMPILE_MODULE(
   TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_mdl_core"
   EXTENSION ".ptx"
   GENERATED_FILES KERNEL_MODULES
-  NVCC_OPTIONS "--ptx" "--machine=64" "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+  NVCC_OPTIONS "--ptx" "--machine=64" "--gpu-architecture=compute_89" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
 )
 
 # Network Compilation
 # added for tcnn
-NVCUDA_COMPILE_MODULE(
-  SOURCES ${NETWORK}
-  DEPENDENCIES ${NETWORK_HEADERS}
-  TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_mdl_core"
-  EXTENSION ".ptx"
-  GENERATED_FILES NETWORK_MODULES
-  NVCC_OPTIONS "--ptx" "--machine=64" "--gpu-architecture=compute_50" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "--extended-lambda" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders" "-I${TCNN_INCLUDE_DIRS}" "-I${TCNN_DEPENDENCIES}/fmt/include" -"I${TCNN_DEPENDENCIES}"
-)
+#NVCUDA_COMPILE_MODULE(
+#  SOURCES ${NETWORK}
+#  DEPENDENCIES ${NETWORK_HEADERS}
+#  TARGET_PATH "${MODULE_TARGET_DIR}/neural_radiance_caching_mdl_core"
+#  EXTENSION ".o"
+#  GENERATED_FILES NETWORK_MODULES
+#  NVCC_OPTIONS "-c" "--machine=64" "--gpu-architecture=compute_" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "--extended-lambda" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders" "-I${TCNN_INCLUDE_DIRS}" 
+#)
 
 source_group( "imgui"           FILES ${IMGUI} )
 source_group( "nvpro_math"      FILES ${NVPRO_MATH} )
@@ -270,23 +277,11 @@ source_group( "network"         FILES ${NETWORK})
 source_group( "network_headers" FILES ${NETWORK_HEADERS})
 source_group( "net_ptx"         FILES ${NETWORK_MODULES})
 
-
-# added for tcnn
-# set(
-#     TCNN_DEPS
-#     "${TCNN_DEPENDENCIES}/fmt"
-#     "${TCNN_DEPENDENCIES}/cutlass"
-# )
-# 
-# set(
-#     TCNN_FILES
-#     "${TCNN_DEPENDENCIES}/json/json.hpp"
-# )
-
 include_directories(
   "."
   "inc"
   "imgui"
+  "network"
   ${GLEW_INCLUDE_DIRS}
   ${GLFW_INCLUDE_DIR}
   ${OPTIX_INCLUDE_DIR}
@@ -294,12 +289,8 @@ include_directories(
   ${IL_INCLUDE_DIR}
   ${ASSIMP_INCLUDE_DIRS}
   ${MDL_SDK_INCLUDE_DIRS}
-  "${TCNN_DEPENDENCIES}/fmt/include"
-  "${TCNN_DEPENDENCIES}"
   ${TCNN_INCLUDE_DIRS}
 )
-
-# add_subdirectory("${TCNN_INCLUDE_DIRS}/..")
 
 add_definitions(
   # Disable warnings for file operations fopen etc.
@@ -321,9 +312,9 @@ add_executable( neural_radiance_caching_mdl
   ${NVPRO_MATH}
   ${HEADERS}
   ${SOURCES}
-  ${SHADERS_HEADERS}
-  ${SHADERS}
-  ${KERNELS}
+  #  ${SHADERS_HEADERS}
+  #  ${SHADERS}
+  #  ${KERNELS}
   ${PROGRAM_MODULES}
   ${KERNEL_MODULES}
   ${NETWORK}
@@ -332,6 +323,7 @@ add_executable( neural_radiance_caching_mdl
 )
 
 target_link_libraries( neural_radiance_caching_mdl
+  tiny-cuda-nn
   OpenGL::GL
   ${GLEW_LIBRARIES}
   ${GLFW_LIBRARIES}
@@ -346,6 +338,7 @@ target_link_libraries( neural_radiance_caching_mdl
 if (UNIX)
   target_link_libraries( neural_radiance_caching_mdl dl )
 endif()
+
 
 set_target_properties( neural_radiance_caching_mdl PROPERTIES FOLDER "apps")
 

@@ -97,6 +97,9 @@ find_package(OptiX80)
 find_package(OptiXToolkit)
 # The MDL_renderer requires the MDL SDK to generate shader code and load images.
 find_package(MDL_SDK)
-find_package(TCNN)
+#find_package(TCNN)
 
+add_subdirectory( 3rdparty )
 add_subdirectory( apps )
+
+message("DONE Configuring apps")

@@ -62,7 +62,7 @@ if (MSVC)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
 endif()
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -115,7 +115,7 @@ function(TCNN_AUTODETECT_CUDA_ARCHITECTURES OUT_VARIABLE)
 
 	if (NOT TCNN_AUTODETECT_CUDA_ARCHITECTURES_OUTPUT)
 		message(STATUS "Automatic GPU detection failed. Building for Turing and Ampere as a best guess.")
-		set(${OUT_VARIABLE} "75;86" PARENT_SCOPE)
+		set(${OUT_VARIABLE} "75;86;89" PARENT_SCOPE)
 	else()
 		set(${OUT_VARIABLE} ${TCNN_AUTODETECT_CUDA_ARCHITECTURES_OUTPUT} PARENT_SCOPE)
 	endif()
@@ -267,6 +267,7 @@ endif()
 ###############################################################################
 
 add_library(tiny-cuda-nn STATIC ${TCNN_SOURCES})
+
 target_compile_definitions(tiny-cuda-nn PUBLIC ${TCNN_DEFINITIONS})
 target_compile_options(tiny-cuda-nn PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:${CUDA_NVCC_FLAGS}>)
 target_include_directories(tiny-cuda-nn PUBLIC

@@ -3,12 +3,11 @@
     credit to GfxExp for their NRC implementation
 */
 
+#include <cuda_runtime.h>
 
 #include <tiny-cuda-nn/common.h>
-#include <cuda_runtime.h>
 #include <tiny-cuda-nn/config.h>
 #include <memory>
-
 
 #include "nrc_network.h"
 
