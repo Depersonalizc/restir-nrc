@@ -840,6 +840,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
               throughput * bxdf * (float(numLights) * weightMIS);
 
             current_reservoir->y.f_actual = f_q;
+            current_reservoir->y.throughput_bxdf = throughput * bxdf;
 
             thePrd->radiance += f_q * W;
             

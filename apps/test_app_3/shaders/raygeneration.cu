@@ -176,9 +176,9 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
   // Russian Roulette path termination after a specified number of bounces needs the current depth.
   int depth = 0; // Path segment index. Primary ray is depth == 0. 
 
-  while (depth < sysData.pathLengths.y)
+  // while (depth < sysData.pathLengths.y)
   // while(true)
-  // while(depth < 1)
+  while(depth < 1)
   {
     // Self-intersection avoidance:
     // Offset the ray t_min value by sysData.sceneEpsilon when a geometric primitive was hit by the previous ray.
@@ -411,10 +411,12 @@ extern "C" __global__ void __raygen__path_tracer()
   // ########################
   if(sysData.cur_iter != 0 && prd.do_spatial_resampling){
     Reservoir updated_reservoir = ris_output_reservoir_buffer[lidx_spatial];
+    float3 current_throughput_bxdf = updated_reservoir.y.throughput_bxdf;
+    
     if(updated_reservoir.W != 0){
 
       int k = 5; 
-      int radius = 5; 
+      int radius = 30; 
       int num_k_sampled = 0;
       int total_M = updated_reservoir.M;
 
@@ -454,7 +456,7 @@ extern "C" __global__ void __raygen__path_tracer()
         updated_reservoir.w_sum;
 
       spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
-      radiance = y.f_actual * updated_reservoir.W;
+      radiance = current_throughput_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
     }
   }
 
