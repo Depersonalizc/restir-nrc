@@ -426,33 +426,40 @@ extern "C" __global__ void __raygen__path_tracer()
       length(y1->radiance_over_pdf) * y1->pdf * current_reservoir->W * current_reservoir->M,
       &prd.seed
     );
+    int2 prev_coord = pixel_from_world_coord(screen, ray, current_reservoir->nearest_hit);
+    if(
+      current_reservoir->nearest_hit.x != 0.f &&
+      current_reservoir->nearest_hit.y != 0.f &&
+      current_reservoir->nearest_hit.z != 0.f
+    ){
+      // select previous frame's reservoir and combine it
+      // and only combine if you actually hit something (empty reservoir bad!)
+      int prev_index = 
+        theLaunchDim.x * theLaunchDim.y * (sysData.cur_iter) +
+        prev_coord.y * theLaunchDim.x + prev_coord.x; // TODO: how to calculate motion vector??
+      
+      Reservoir* prev_frame_reservoir = &spatial_output_reservoir_buffer[prev_index];
+      LightSample* y2 = &prev_frame_reservoir->y;
+      if(prev_frame_reservoir->M >= current_reservoir->M){
+        prev_frame_reservoir->M = current_reservoir->M;
+      }
 
-    // select previous frame's reservoir and combine it
-    // and only combine if you actually hit something (empty reservoir bad!)
-    int prev_index = 
-      theLaunchDim.x * theLaunchDim.y * (sysData.cur_iter) +
-      theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x; // TODO: how to calculate motion vector??
-    Reservoir* prev_frame_reservoir = &spatial_output_reservoir_buffer[prev_index];
-    LightSample* y2 = &prev_frame_reservoir->y;
-    if(prev_frame_reservoir->M >= current_reservoir->M){
-      prev_frame_reservoir->M = current_reservoir->M;
+      updateReservoir(
+        &s, 
+        y2,                                                                                    
+        length(y2->radiance_over_pdf) * y2->pdf * prev_frame_reservoir->W * prev_frame_reservoir->M,
+        &prd.seed
+      );
+
+      s.M = current_reservoir->M + prev_frame_reservoir->M;
+      s.W = 
+        (1.0f / (length(s.y.radiance_over_pdf) * s.y.pdf)) *  // 1 / p_hat
+        (1.0f / s.M) *
+        s.w_sum;
+      if(isnan(s.W) || s.M == 0.f){ s.W = 0; }
+
+      ris_output_reservoir_buffer[lidx_ris] = s;
     }
-
-    updateReservoir(
-      &s, 
-      y2,                                                                                    
-      length(y2->radiance_over_pdf) * y2->pdf * prev_frame_reservoir->W * prev_frame_reservoir->M,
-      &prd.seed
-    );
-
-    s.M = current_reservoir->M + prev_frame_reservoir->M;
-    s.W = 
-      (1.0f / (length(s.y.radiance_over_pdf) * s.y.pdf)) *  // 1 / p_hat
-      (1.0f / s.M) *
-      s.w_sum;
-    if(isnan(s.W) || s.M == 0.f){ s.W = 0; }
-
-    ris_output_reservoir_buffer[lidx_ris] = s;
   }
 
   // ########################
@@ -462,12 +469,12 @@ extern "C" __global__ void __raygen__path_tracer()
     Reservoir updated_reservoir = ris_output_reservoir_buffer[lidx_spatial];
     float3 current_throughput_bxdf = updated_reservoir.y.throughput_bxdf;
     
-    if(updated_reservoir.nearest_hit.x != 0.0 && updated_reservoir.nearest_hit.y != 0.0 && updated_reservoir.nearest_hit.z != 0.0){
-      // if(index == 93312){
-        int2 pixel_index = pixel_from_world_coord(screen, ray, updated_reservoir.nearest_hit);
-        printf("%i, %i vs actual %i, %i \n", pixel_index.x, pixel_index.y, theLaunchIndex.x, theLaunchIndex.y); 
-      // }
-    }
+    // if(updated_reservoir.nearest_hit.x != 0.0 && updated_reservoir.nearest_hit.y != 0.0 && updated_reservoir.nearest_hit.z != 0.0){
+    //   // if(index == 93312){
+    //     int2 pixel_index = pixel_from_world_coord(screen, ray, updated_reservoir.nearest_hit);
+    //     printf("%i, %i vs actual %i, %i \n", pixel_index.x, pixel_index.y, theLaunchIndex.x, theLaunchIndex.y); 
+    //   // }
+    // }
 
     if(updated_reservoir.W != 0){
 
