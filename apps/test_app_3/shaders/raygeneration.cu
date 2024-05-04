@@ -36,8 +36,57 @@
 #include "half_common.h"
 #include "random_number_generators.h"
 
-
 extern "C" __constant__ SystemData sysData;
+
+__forceinline__ __device__ void matrixMul4x4(float* a, float* b, float* c) {
+  c[0] = a[0]*b[0] + a[4]*b[1] + a[8]*b[2] + a[12]*b[3];
+  c[1] = a[1]*b[0] + a[5]*b[1] + a[9]*b[2] + a[13]*b[3];
+  c[2] = a[2]*b[0] + a[6]*b[1] + a[10]*b[2] + a[14]*b[3];
+  c[3] = a[3]*b[0] + a[7]*b[1] + a[11]*b[2] + a[15]*b[3];
+
+  // col 2
+  c[4] = a[0]*b[4] + a[4]*b[5] + a[8]*b[6] + a[12]*b[7];
+  c[5] = a[1]*b[4] + a[5]*b[5] + a[9]*b[6] + a[13]*b[7];
+  c[6] = a[2]*b[4] + a[6]*b[5] + a[10]*b[6] + a[14]*b[7];
+  c[7] = a[3]*b[4] + a[7]*b[5] + a[11]*b[6] + a[15]*b[7];
+
+  // col 3
+  c[8] = a[0]*b[8] + a[4]*b[9] + a[8]*b[10] + a[12]*b[11];
+  c[9] = a[1]*b[8] + a[5]*b[9] + a[9]*b[10] + a[13]*b[11];
+  c[10] = a[2]*b[8] + a[6]*b[9] + a[10]*b[10] + a[14]*b[11];
+  c[11] = a[3]*b[8] + a[7]*b[9] + a[11]*b[10] + a[15]*b[11];
+
+  // col 4
+  c[12] = a[0]*b[12] + a[4]*b[13] + a[8]*b[14] + a[12]*b[15];
+  c[13] = a[1]*b[12] + a[5]*b[13] + a[9]*b[14] + a[13]*b[15];
+  c[14] = a[2]*b[12] + a[6]*b[13] + a[10]*b[14] + a[14]*b[15];
+  c[15] = a[3]*b[12] + a[7]*b[13] + a[11]*b[14] + a[15]*b[15];
+}
+
+__forceinline__ __device__ void matrixMul4x4Transpose(float* a, float* b) {
+  //  0  4  8 12 
+  //  1  5  9 13
+  //  2  6 10 14
+  //  3  7 11 15
+
+  b[0] = a[0];  b[1] = a[4];  b[2] = a[8];   b[3] = a[12];
+
+  // col 2
+  b[4] = a[1];  b[5] = a[5];  b[6] = a[9];   b[7] = a[13];
+
+  // col 3
+  b[8] = a[2];  b[9] = a[6];  b[10] = a[10]; b[11] = a[14];
+
+  // col 4
+  b[12] = a[3]; b[13] = a[7]; b[14] = a[11]; b[15] = a[15];
+}
+
+__forceinline__ __device__ void matrixVectorMul4x4(float* A, float* b, float* c) {
+  c[0] = A[0]*b[0] + A[4]*b[1] + A[8]*b[2] + A[12]*b[3];
+  c[1] = A[1]*b[0] + A[5]*b[1] + A[9]*b[2] + A[13]*b[3];
+  c[2] = A[2]*b[0] + A[6]*b[1] + A[10]*b[2] + A[14]*b[3];
+  c[3] = A[3]*b[0] + A[7]*b[1] + A[11]*b[2] + A[15]*b[3];
+}
 
 __forceinline__ __device__ int2 pixel_from_world_coord(const float2 screen, const LensRay ray, float3 world_coord)
 {
@@ -413,6 +462,13 @@ extern "C" __global__ void __raygen__path_tracer()
     Reservoir updated_reservoir = ris_output_reservoir_buffer[lidx_spatial];
     float3 current_throughput_bxdf = updated_reservoir.y.throughput_bxdf;
     
+    if(updated_reservoir.nearest_hit.x != 0.0 && updated_reservoir.nearest_hit.y != 0.0 && updated_reservoir.nearest_hit.z != 0.0){
+      // if(index == 93312){
+        int2 pixel_index = pixel_from_world_coord(screen, ray, updated_reservoir.nearest_hit);
+        printf("%i, %i vs actual %i, %i \n", pixel_index.x, pixel_index.y, theLaunchIndex.x, theLaunchIndex.y); 
+      // }
+    }
+
     if(updated_reservoir.W != 0){
 
       int k = 5; 

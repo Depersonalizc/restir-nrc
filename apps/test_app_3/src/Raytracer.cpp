@@ -300,6 +300,7 @@ void Raytracer::initLights(const std::vector<LightGUI>& lightsGUI)
 // Traverse the SceneGraph and store Groups, Instances and Triangles nodes in the raytracer representation.
 void Raytracer::initScene(std::shared_ptr<sg::Group> root, const unsigned int numGeometries)
 {
+    printf("    Checkpoint 0\n");
     // Allocate the number of GeometryData per active device.
     m_geometryData.resize(numGeometries * m_devicesActive.size()); // Not sharing, all devices hold all geometry data.
 
@@ -315,12 +316,16 @@ void Raytracer::initScene(std::shared_ptr<sg::Group> root, const unsigned int nu
 
     traverseNode(root, instanceData, matrix);
 
+    printf("    Checkpoint 1\n");
+
     const unsigned int numDevices = static_cast<unsigned int>(m_devicesActive.size());
 
     for (unsigned int device = 0; device < numDevices; ++device)
     {
       m_devicesActive[device]->createTLAS();
+      printf("    Checkpoint 2\n");
       m_devicesActive[device]->createGeometryInstanceData(m_geometryData, numDevices, device);
+      printf("    Checkpoint 3\n");
     }
 }
 
