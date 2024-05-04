@@ -280,6 +280,9 @@ Adding the libraries and data (Yes, this could be done automatically but this is
 
 * **IMPORTANT**: Copy all files from the `data` folder into the build folder with the executables (`bin/Release` or `bin/Debug`). The executables search for their resources relative to their working directory.
 
+To Generate a Solution:
+* in the build folder, run `cmake -G "Visual Studio 17 2022" ..` for vs2022 and c++17 (maybe? idfk)
+
 **Linux**
 
 Pre-requisites:
