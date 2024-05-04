@@ -557,7 +557,7 @@ bool Application::render()
       restartRendering(true);
     }
 
-    std::cout << "iterationIndex: " << iterationIndex << ", m_spp: " << m_spp << std::endl;
+    // std::cout << "iterationIndex: " << iterationIndex << ", m_spp: " << m_spp << std::endl;
 
     // For continuous rendering (TODO: toggle with GUI option)
     if (iterationIndex > m_spp) {

@@ -1910,8 +1910,8 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
     CU_CHECK( cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(&m_d_systemData->iterationIndex), &m_subFrames[m_systemData.iterationIndex], sizeof(unsigned int), m_cudaStream) );
   }
 
-  // printf("###########################\n");
-  // printf("%i, %i\n", m_systemData.iterationIndex, m_systemData.cur_iter);
+  // printf("^^^^^^^^^^^^^^^^^^^^n");
+  // printf("CUR: %i, %i, %i\n", m_systemData.iterationIndex, m_systemData.cur_iter, m_systemData.spp);
   
   // Note the launch width per device to render in tiles.
   OPTIX_CHECK( m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1) );

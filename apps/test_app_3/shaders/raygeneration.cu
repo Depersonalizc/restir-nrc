@@ -225,9 +225,9 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
   // Russian Roulette path termination after a specified number of bounces needs the current depth.
   int depth = 0; // Path segment index. Primary ray is depth == 0. 
 
-  // while (depth < sysData.pathLengths.y)
+  while (depth < sysData.pathLengths.y)
   // while(true)
-  while(depth < 1)
+  // while(depth < 1)
   {
     // Self-intersection avoidance:
     // Offset the ray t_min value by sysData.sceneEpsilon when a geometric primitive was hit by the previous ray.
@@ -385,22 +385,30 @@ extern "C" __global__ void __raygen__path_tracer()
   prd.launch_linear_index = lidx_ris;
 
   // ReSxIR vs RESTIR (temporal is yikes!)
-  prd.do_ris_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
-  prd.do_spatial_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
-  prd.do_temporal_resampling = false;
-
-  // naive VS ReSxIR (no temporal) 
   // prd.do_ris_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
   // prd.do_spatial_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
   // prd.do_temporal_resampling = false;
 
+  // naive VS ReSxIR (no temporal) 
+  prd.do_ris_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
+  prd.do_spatial_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
+  prd.do_temporal_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
+
   // thirds
-  // prd.do_ris_resampling = theLaunchIndex.x > theLaunchDim.x * 0.33;
-  // prd.do_spatial_resampling = theLaunchIndex.x > theLaunchDim.x * 0.66;
-  // prd.do_temporal_resampling = theLaunchIndex.x > theLaunchDim.x * 0.66;
+  // prd.do_ris_resampling = false;
+  // prd.do_spatial_resampling = false;
+  // prd.do_temporal_resampling = false;
+
+  // prd.do_ris_resampling = true;
+  // prd.do_spatial_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
+  // prd.do_temporal_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
 
   // clear out previous frame's temp buffer
   temp_reservoir_buffer[index] = Reservoir({0, 0, 0, 0});
+
+  if(index == 93312){
+    // printf("START  %i \n", sysData.cur_iter);
+  }
 
   // ########################
   // HANDLE RIS LOGIC
@@ -411,12 +419,23 @@ extern "C" __global__ void __raygen__path_tracer()
     // integrator(prd, index);
   }
 
+    if(index == 93312){
+      // printf("TEMPORAL  %i \n", sysData.cur_iter);
+      printf("%f, %f, %f", sysData.cameraDefinitions->P.x, sysData.cameraDefinitions->P.y, sysData.cameraDefinitions->P.z);
+    }
+
   // ########################
   //  HANDLE TEMPORAL LOGIC
   // ########################
-  if(!sysData.first_frame && sysData.cur_iter != sysData.spp && prd.do_temporal_resampling){
+  // !sysData.first_frame && 
+  if(sysData.cur_iter != sysData.spp && prd.do_temporal_resampling){
+    if(index == 93312){
+      // printf("TEMPORAL  %i \n", sysData.cur_iter);
+      printf("%f, %f, %f", sysData.cameraDefinitions->P.x, sysData.cameraDefinitions->P.y, sysData.cameraDefinitions->P.z);
+    }
     Reservoir s = Reservoir({0, 0, 0, 0});
 
+    Reservoir* current_pixel_prev_resevoir = &spatial_output_reservoir_buffer[lidx_ris];
     Reservoir* current_reservoir = &temp_reservoir_buffer[index]; // choose current reservoir
     LightSample* y1 = &current_reservoir->y;
 
@@ -426,7 +445,16 @@ extern "C" __global__ void __raygen__path_tracer()
       length(y1->radiance_over_pdf) * y1->pdf * current_reservoir->W * current_reservoir->M,
       &prd.seed
     );
-    int2 prev_coord = pixel_from_world_coord(screen, ray, current_reservoir->nearest_hit);
+    int2 current_pixel_prev_coord = pixel_from_world_coord(screen, ray, current_pixel_prev_resevoir->nearest_hit);
+    int offset_x = theLaunchIndex.x - current_pixel_prev_coord.x;
+    int offset_y = theLaunchIndex.y - current_pixel_prev_coord.y;
+    int prev_coord_x = theLaunchIndex.x + offset_x;
+    int prev_coord_y = theLaunchIndex.y + offset_y;
+    if(prev_coord_x < 0) prev_coord_x = 0; 
+    if(prev_coord_y < 0) prev_coord_y = 0; 
+    if(prev_coord_x >= theLaunchDim.x) prev_coord_x = 0; 
+    if(prev_coord_y >= theLaunchDim.y) prev_coord_y = 0; 
+
     if(
       current_reservoir->nearest_hit.x != 0.f &&
       current_reservoir->nearest_hit.y != 0.f &&
@@ -436,9 +464,17 @@ extern "C" __global__ void __raygen__path_tracer()
       // and only combine if you actually hit something (empty reservoir bad!)
       int prev_index = 
         theLaunchDim.x * theLaunchDim.y * (sysData.cur_iter) +
-        prev_coord.y * theLaunchDim.x + prev_coord.x; // TODO: how to calculate motion vector??
+        prev_coord_y * theLaunchDim.x + prev_coord_x; // TODO: how to calculate motion vector??
       
       Reservoir* prev_frame_reservoir = &spatial_output_reservoir_buffer[prev_index];
+      if(index == 93312){
+        printf("UPDATED TEMPORAL: cur: (%i, %i),  prev: (%i, %i),  cur_coord: (%f, %f),  prev_coord: (%f, %f),  prev_M: %i,  prev_W: %f,  cur_iter: %i,  index: %i\n", 
+          theLaunchIndex.x, theLaunchIndex.y, prev_coord_x, prev_coord_y, 
+          current_reservoir->nearest_hit.x, current_reservoir->nearest_hit.y, 
+          current_pixel_prev_resevoir->nearest_hit.x, current_pixel_prev_resevoir->nearest_hit.y, 
+          prev_frame_reservoir->M, prev_frame_reservoir->W, sysData.cur_iter, prev_index);
+        
+      }
       LightSample* y2 = &prev_frame_reservoir->y;
       if(prev_frame_reservoir->M >= current_reservoir->M){
         prev_frame_reservoir->M = current_reservoir->M;
@@ -457,6 +493,7 @@ extern "C" __global__ void __raygen__path_tracer()
         (1.0f / s.M) *
         s.w_sum;
       if(isnan(s.W) || s.M == 0.f){ s.W = 0; }
+      s.nearest_hit = current_reservoir->nearest_hit;
 
       ris_output_reservoir_buffer[lidx_ris] = s;
     }
@@ -466,6 +503,9 @@ extern "C" __global__ void __raygen__path_tracer()
   // HANDLE SPATIAL LOGIC
   // ########################
   if(sysData.cur_iter != 0 && prd.do_spatial_resampling){
+    if(index == 93312){
+      // printf("SPATIAL %i \n", sysData.cur_iter);
+    }
     Reservoir updated_reservoir = ris_output_reservoir_buffer[lidx_spatial];
     float3 current_throughput_bxdf = updated_reservoir.y.throughput_bxdf;
     
@@ -519,6 +559,12 @@ extern "C" __global__ void __raygen__path_tracer()
         updated_reservoir.w_sum;
 
       spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
+      if(index == 93312){
+        printf("UPDATED SPATIAL: (%f, %f),  updated_M: %i,  updated_W: %f,  index: %i,  cur_iter: %i\n", 
+          updated_reservoir.nearest_hit.x, updated_reservoir.nearest_hit.y,
+          updated_reservoir.M, updated_reservoir.W, lidx_spatial, sysData.cur_iter
+        );
+      }
       radiance = current_throughput_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
     }
   }
