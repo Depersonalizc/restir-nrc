@@ -1,5 +1,9 @@
-/build
+/build/*
+!/build/package.json
+.vscode/settings.json
+
 /builds
+/Builds/*
 /msvs2017
 /msvs2019
 /msvs2022
@@ -16,3 +20,7 @@
 /.idea
 /cmake-build*
 *.user
+
+CMakeLists.txt.user
+nsight_compute_trace_restir.ncu-rep
+/.vscode

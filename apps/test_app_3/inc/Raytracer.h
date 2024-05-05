@@ -1,0 +1,119 @@
+/* 
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *  * Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *  * Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *  * Neither the name of NVIDIA CORPORATION nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+ * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+#pragma once
+ 
+#ifndef RAYTRACER_H
+#define RAYTRACER_H
+
+#include "inc/Device.h"
+//#include "inc/MaterialGUI.h"
+#include "inc/Picture.h"
+#include "inc/SceneGraph.h"
+#include "inc/Texture.h"
+#include "inc/NVMLImpl.h"
+
+#include "shaders/system_data.h"
+
+#include "inc/mdl_wrapper.h"
+
+#include <map>
+#include <memory>
+#include <vector>
+
+class Raytracer
+{
+public:
+  Raytracer(const int maskDevices,
+            const TypeLight typeEnv,
+            const int interop,
+            const unsigned int tex,
+            const unsigned int pbo,
+            const size_t sizeArena,
+            const Raytracer* raytracer_ref = nullptr);
+  ~Raytracer();
+
+  int matchUUID(const char* uuid);
+  int matchLUID(const char* luid, const unsigned int nodeMask);
+  
+  void synchronize();        // Needed for the benchmark to wait for all asynchronous rendering to have finished.
+
+  void initTextures(const std::map<std::string, Picture*>& mapOfPictures);
+  void initCameras(const std::vector<CameraDefinition>& cameras);
+  void initLights(const std::vector<LightGUI>& lights);
+  void initScene(std::shared_ptr<sg::Group> root, const unsigned int numGeometries);
+  void initState(const DeviceState& state);
+
+  // Update functions should be replaced with NOP functions in a derived batch renderer because the device functions are fully asynchronous then.
+  void updateCamera(const int idCamera, const CameraDefinition& camera);
+  void updateLight(const int idLight, const LightGUI& lightGUI);
+  //void updateLight(const int idLight, const LightDefinition& light);
+  void updateMaterial(const int idMaterial, const MaterialMDL* materialMDL);
+  void updateState(const DeviceState& state);
+  void updateRenderingOptions(int32_t num_panes, const PaneFlags& pane_a, const PaneFlags& pane_b, const PaneFlags& pane_c);
+
+  unsigned int render(const int mode = 0, bool ref = false); // 0 = interactive, 1 = benchmark (fully asynchronous launches)
+  void updateDisplayTexture();
+  const void* getOutputBufferHost();
+
+  //void setMdlIface(MdlWrapper* mdl_wrapper);
+
+private:
+  void selectDevices();
+  int  getDeviceHome(const std::vector<int>& island) const;
+  void traverseNode(std::shared_ptr<sg::Node> node, InstanceData instanceData, float matrix[12]);
+
+public:
+  // Constructor arguments
+  unsigned int m_maskDevices; // The bitmask with the devices the user selected.
+  TypeLight    m_typeEnv;     // Controls the miss program selection.
+  int          m_interop;     // Which CUDA-OpenGL interop to use.
+  unsigned int m_tex;         // The OpenGL texture object used for display. 
+  unsigned int m_pbo;         // The pixel buffer object when using INTEROP_MODE_PBO.
+  size_t       m_sizeArena;   // The default Arena allocation size in mega-bytes, just routed through to Device class.
+
+  bool m_isValid;
+
+  int                  m_numDevicesVisible; // The number of visible CUDA devices. (What you can control via the CUDA_VISIBLE_DEVICES environment variable.)
+  int                  m_indexDeviceOGL;    // The first device which matches with the OpenGL LUID and node mask. -1 when there was no match.
+  unsigned int         m_maskDevicesActive; // The bitmask marking the actually enabled devices.
+  std::vector<Device*> m_devicesActive;
+
+  const Raytracer* m_raytracer_ref;
+
+  unsigned int m_iterationIndex;  // Tracks which sub-frame is currently raytraced.
+  unsigned int m_samplesPerPixel; // This is samplesSqrt squared. Rendering end-condition is: m_iterationIndex == m_samplesPerPixel.
+
+  std::vector<GeometryData> m_geometryData; // The geometry device data. (Either per P2P island when sharing GAS, or per device when not sharing.)
+
+  NVMLImpl m_nvml;
+
+  MdlWrapper* m_mdl;
+};
+
+#endif // RAYTRACER_H
