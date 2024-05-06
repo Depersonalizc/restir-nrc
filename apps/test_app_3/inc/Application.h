@@ -58,6 +58,7 @@
 #include "inc/mdl_wrapper.h"
 #include "inc/MaterialMDL.h"
 #include "inc/ReferenceGUI.h"
+#include "inc/RenderingGUI.h"
 
 #include <dp/math/Matmnt.h>
 
@@ -277,8 +278,8 @@ private:
 
   // Same as above, but for ref.
 
-  static constexpr int2 m_pathLengths_ref = {16, 64};
-  static constexpr int  m_spp_ref = 16;
+  static constexpr int2 m_pathLengths_ref = {16, 32};
+  static constexpr int  m_spp_ref = 32;
   static constexpr bool m_useDirectLighting_ref = true;
 
   TypeLight m_typeEnv;                // The type of the light in m_lightsGUI[0]. Used to determine the miss shader.
@@ -292,6 +293,7 @@ private:
   Camera m_camera;                  // "center", "camera"
 
   ReferenceGUI m_referenceGUI;
+  RenderingGUI m_renderingGUI;
 
   float m_mouseSpeedRatio;
   

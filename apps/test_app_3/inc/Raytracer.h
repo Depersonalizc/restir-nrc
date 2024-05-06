@@ -54,7 +54,8 @@ public:
             const int interop,
             const unsigned int tex,
             const unsigned int pbo,
-            const size_t sizeArena);
+            const size_t sizeArena,
+            const Raytracer* raytracer_ref = nullptr);
   ~Raytracer();
 
   int matchUUID(const char* uuid);
@@ -74,6 +75,7 @@ public:
   //void updateLight(const int idLight, const LightDefinition& light);
   void updateMaterial(const int idMaterial, const MaterialMDL* materialMDL);
   void updateState(const DeviceState& state);
+  void updateRenderingOptions(int32_t num_panes, const PaneFlags& pane_a, const PaneFlags& pane_b, const PaneFlags& pane_c);
 
   unsigned int render(const int mode = 0, bool ref = false); // 0 = interactive, 1 = benchmark (fully asynchronous launches)
   void updateDisplayTexture();
@@ -101,6 +103,8 @@ public:
   int                  m_indexDeviceOGL;    // The first device which matches with the OpenGL LUID and node mask. -1 when there was no match.
   unsigned int         m_maskDevicesActive; // The bitmask marking the actually enabled devices.
   std::vector<Device*> m_devicesActive;
+
+  const Raytracer* m_raytracer_ref;
 
   unsigned int m_iterationIndex;  // Tracks which sub-frame is currently raytraced.
   unsigned int m_samplesPerPixel; // This is samplesSqrt squared. Rendering end-condition is: m_iterationIndex == m_samplesPerPixel.

@@ -323,6 +323,7 @@ struct DeviceState
   float    epsilonFactor;
   float    clockFactor;
   int      directLighting;
+  bool     computePsnr;
 };
 
 
@@ -390,8 +391,6 @@ struct LightprofileHost
   Lightprofile m_profile;
 };
 
-
-
 class Device
 {
 public:
@@ -402,7 +401,8 @@ public:
          const int interop,       // The interop mode to use.
          const unsigned int tex,  // OpenGL HDR texture object handle
          const unsigned int pbo,  // OpenGL PBO handle.
-         const size_t sizeArena); // The default Arena size in mega-bytes.
+         const size_t sizeArena,  // The default Arena size in mega-bytes.
+         const Device* ref_device);
   ~Device();
 
   bool matchUUID(const char* uuid);
@@ -422,7 +422,8 @@ public:
   void updateLight(const int idLight, const LightGUI& lightsGUI);
   //void updateLight(const int idLight, const LightDefinition& light);
   void updateMaterial(const int idMaterial, const MaterialMDL* materialMDL);
-  
+  void updateRenderingOptions(int32_t num_panes, const PaneFlags& pane_a, const PaneFlags& pane_b, const PaneFlags& pane_c);
+
   void setState(const DeviceState& state);
   void compositor(Device* other);
 
@@ -490,6 +491,8 @@ public:
 
   float m_clockFactor; // Clock Factor scaled by CLOCK_FACTOR_SCALE (1.0e-9f) for USE_TIME_VIEW
 
+  const Device* m_ref_device;
+
   CUuuid m_deviceUUID;
   
   // Not actually used because this only works under Windows WDDM mode, not in TCC mode!
@@ -554,6 +557,14 @@ public:
   CUmodule    m_moduleCompositor;
   CUfunction  m_functionCompositor;
   CUdeviceptr m_d_compositorData;
+
+  bool        m_compute_psnr;
+  CUmodule    m_module_psnr;
+  CUfunction  m_function_psnr;
+  CUfunction  m_function_psnr_precomp;
+  CUfunction  m_function_psnr_intermediate;
+  CUdeviceptr m_d_psnrData;
+  CUdeviceptr m_d_workspace;
 
 #if USE_FP32_OUTPUT
   std::vector<float4> m_bufferHost;

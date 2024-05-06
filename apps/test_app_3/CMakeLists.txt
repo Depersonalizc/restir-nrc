@@ -182,6 +182,7 @@ set( SHADERS
 set( KERNELS
   # Native CUDA kernels
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/compositor.cu
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders/psnr.cu
 )
 
 set( SHADERS_HEADERS
@@ -214,7 +215,7 @@ NVCUDA_COMPILE_MODULE(
   TARGET_PATH "${MODULE_TARGET_DIR}/test_app_3_core"
   EXTENSION "${OPTIX_MODULE_EXTENSION}"
   GENERATED_FILES PROGRAM_MODULES
-  NVCC_OPTIONS "${OPTIX_PROGRAM_TARGET}" "--machine=64" "--gpu-architecture=compute_86" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders" 
+  NVCC_OPTIONS "${OPTIX_PROGRAM_TARGET}" "--machine=64" "--gpu-architecture=compute_86" "--use_fast_math" "--relocatable-device-code=true" "--generate-line-info" "-Wno-deprecated-gpu-targets" "-I${OPTIX_INCLUDE_DIR}" "-I${MDL_SDK_INCLUDE_DIRS}" "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
 )
 
 # The native CUDA Kernels will be translated to *.ptx unconditionally.
@@ -276,6 +277,8 @@ add_executable( test_app_3
   inc/mdl_wrapper.h
   src/mdl_wrapper.cpp
   inc/ReferenceGUI.h
+  inc/RenderingGUI.h
+  inc/pane_flags.h
 )
 
 target_link_libraries( test_app_3

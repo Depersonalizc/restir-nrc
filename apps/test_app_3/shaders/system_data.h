@@ -39,6 +39,8 @@
 #include "shader_configuration.h"
 #include "vertex_attributes.h"
 
+#include "../inc/pane_flags.h"
+
 
 // Structure storing the per instance data for all instances inside the geometryInstanceData buffer below. Indexed via optixGetInstanceId().
 struct GeometryInstanceData
@@ -50,14 +52,6 @@ struct GeometryInstanceData
   // Using CUdeviceptr here to be able to handle different attribute and index formats.
   CUdeviceptr attributes;
   CUdeviceptr indices;
-};
-
-struct PaneFlags {
-  bool do_reference;
-  bool do_ris;
-  bool do_spatial_reuse;
-  bool do_temporal_reuse;
-  bool do_nrc;
 };
 
 struct SystemData
@@ -72,6 +66,11 @@ struct SystemData
   // This is always sized to the resolution, not always matching the launch dimension.
   // Using a CUdeviceptr here to allow for different buffer formats without too many casts.
   CUdeviceptr outputBuffer;
+
+  // This is basically THE minimal amount of effort needed to share reference results.
+  // Don't judge a man writing code for a final project
+  // On a second thought, this will make resizing more complicated...
+  //CUdeviceptr outputBuffer_ref;
 
   CUdeviceptr RISOutputReservoirBuffer;
   CUdeviceptr SpatialOutputReservoirBuffer;
@@ -130,9 +129,9 @@ struct SystemData
   int rand_seed;
 
   int num_panes;
-  PaneFlags A_flags;
-  PaneFlags B_flags;
-  PaneFlags C_flags; 
+  PaneFlags pane_a_flags;
+  PaneFlags pane_b_flags;
+  PaneFlags pane_c_flags;
 };
 
 // USE_SET
