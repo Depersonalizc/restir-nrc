@@ -127,6 +127,8 @@ struct SystemData
   int enable_temporal_reuse;
   int enable_mis_handling;
 
+  int rand_seed;
+
   int num_panes;
   PaneFlags A_flags;
   PaneFlags B_flags;

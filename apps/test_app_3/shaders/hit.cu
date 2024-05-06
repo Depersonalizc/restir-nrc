@@ -749,7 +749,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     }
 
     // algorithm 2 from course notes
-    if (thePrd->do_ris_resampling) {
+    if (thePrd->do_ris_resampling && thePrd->first_hit) {
       int M = 32;
 
       // generate candidates (X_1, ..., X_M)
@@ -833,7 +833,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
           // Selecting one of many lights means the inverse of 1.0f / numLights.
           // This is using the path throughput before the sampling modulated it above.
 
-          if(thePrd->do_ris_resampling){
+          if(thePrd->do_ris_resampling && thePrd->first_hit){
             float W = current_reservoir->W;
             float3 f_q = 
               lightSample.pdf * lightSample.radiance_over_pdf *
@@ -842,7 +842,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             current_reservoir->y.f_actual = f_q;
             current_reservoir->y.throughput_bxdf = throughput * bxdf;
 
-            thePrd->radiance += f_q * W;
+            thePrd->radiance_first_hit += f_q * W;
             
           } else {
             thePrd->radiance += throughput * bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);

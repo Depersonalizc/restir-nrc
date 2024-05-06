@@ -204,7 +204,8 @@ __forceinline__ __device__ void sampleVolumeScattering(const float2 xi, const fl
 __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
 {
   // The integrator starts with black radiance and full path throughput.
-  prd.radiance   = make_float3(0.0f);
+  prd.radiance             = make_float3(0.0f);
+  prd.radiance_first_hit   = make_float3(0.0f);
   prd.pdf        = 0.0f;
   prd.throughput = make_float3(1.0f);
   prd.flags      = 0;
@@ -218,6 +219,7 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
   prd.stack[0].sigma_a = make_float3(0.0f); // No volume absorption.
   prd.stack[0].sigma_s = make_float3(0.0f); // No volume scattering.
   prd.stack[0].bias    = 0.0f;              // Isotropic volume scattering.
+  prd.first_hit = true;
 
   // Put payload pointer into two unsigned integers. Actually const, but that's not what optixTrace() expects.
   uint2 payload = splitPointer(&prd);
@@ -324,6 +326,7 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
     }
 
     ++depth; // Next path segment.
+    prd.first_hit = false;
   }
   
   return prd.radiance;
@@ -356,7 +359,7 @@ extern "C" __global__ void __raygen__path_tracer()
   PerRayData prd;
 
   // Initialize the random number generator seed from the linear pixel index and the iteration index.
-  prd.seed = tea<4>(theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
+  prd.seed = tea<4>(theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x, sysData.iterationIndex + sysData.rand_seed); // PERF This template really generates a lot of instructions.
   prd.launchDim = theLaunchDim;
   prd.launchIndex = theLaunchIndex;
 
@@ -385,9 +388,9 @@ extern "C" __global__ void __raygen__path_tracer()
   prd.launch_linear_index = lidx_ris;
 
   // ReSxIR vs RESTIR (temporal is yikes!)
-  prd.do_ris_resampling = true;
-  prd.do_spatial_resampling = true;
-  prd.do_temporal_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
+  // prd.do_ris_resampling = true;
+  // prd.do_spatial_resampling = true;
+  // prd.do_temporal_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
 
   // naive VS ReSxIR (no temporal) 
   // prd.do_ris_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
@@ -395,9 +398,9 @@ extern "C" __global__ void __raygen__path_tracer()
   // prd.do_temporal_resampling = false;
 
   // naive VS ReSTIR
-  // prd.do_ris_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
-  // prd.do_spatial_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
-  // prd.do_temporal_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
+  prd.do_ris_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
+  prd.do_spatial_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
+  prd.do_temporal_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
 
   // thirds
   // prd.do_ris_resampling = false;
@@ -417,7 +420,14 @@ extern "C" __global__ void __raygen__path_tracer()
   if(sysData.cur_iter != sysData.spp){
     ris_output_reservoir_buffer[lidx_ris] = Reservoir({0, 0, 0, 0});
     radiance = integrator(prd, index);
-    // integrator(prd, index);
+
+    if(prd.do_spatial_resampling){
+      if(sysData.cur_iter == 0){
+        radiance += prd.radiance_first_hit;
+      }
+    } else {
+      radiance += prd.radiance_first_hit;
+    }
   }
 
   // ########################
@@ -578,7 +588,7 @@ extern "C" __global__ void __raygen__path_tracer()
       //     updated_reservoir.M, updated_reservoir.W, lidx_spatial, sysData.cur_iter
       //   );
       // }
-      radiance = current_throughput_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
+      radiance += current_throughput_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
     }
   }
 
