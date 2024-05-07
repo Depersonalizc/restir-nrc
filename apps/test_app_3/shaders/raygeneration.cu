@@ -627,7 +627,7 @@ extern "C" __global__ void __raygen__path_tracer()
 
       spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
     //   radiance += current_throughput_bxdf * y.radiance_over_pdf * updated_reservoir.W * sysData.numLights;
-      radiance += current_throughput * current_bxdf * y.radiance_over_pdf * updated_reservoir.W * sysData.numLights;
+      radiance += current_throughput * current_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
     }
   }
 
