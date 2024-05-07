@@ -419,6 +419,35 @@ extern "C" __global__ void __raygen__path_tracer()
     float3 nearest_hit_current = make_float3(0.0);
 
     // ########################
+    // HANDLE RIS LOGIC
+    // ########################
+    // if(sysData.cur_iter != sysData.spp) {
+    //     if (prd.num_ris_samples > 0) {
+    //         ris_output_reservoir_buffer[lidx_ris] = spatial_output_reservoir_buffer[lidx_spatial]; // Reservoir({0, 0, 0, 0});
+    //     }
+    //     radiance = integrator(prd, index);
+    //     if (index == 256*10) {
+    //         printf("cur_iter = %d radiance from RIS step = %f %f %f\n", sysData.cur_iter, radiance.x, radiance.y, radiance.z);
+    //     }
+    //     // integrator(prd, index);
+    // }
+    if(sysData.cur_iter != sysData.spp){
+        if (prd.do_ris_resampling) {
+            ris_output_reservoir_buffer[lidx_ris] = Reservoir({0, 0, 0, 0});
+        }
+        radiance = integrator(prd, index);
+        nearest_hit_current = ris_output_reservoir_buffer[lidx_ris].nearest_hit;
+
+        if(prd.do_spatial_resampling){
+            if(sysData.cur_iter == 0){
+                radiance += prd.radiance_first_hit;
+            }
+        } else {
+            radiance += prd.radiance_first_hit;
+        }
+    }
+
+    // ########################
     //  HANDLE TEMPORAL LOGIC
     // ########################
     if (prd.do_temporal_resampling && !sysData.first_frame && sysData.cur_iter != sysData.spp){
@@ -525,7 +554,7 @@ extern "C" __global__ void __raygen__path_tracer()
             if (index == 256*10) {
                 printf("s.y.f_actual = %f\t s.W = %f\n", s.y.f_actual,  s.W);
             }
-            radiance = s.y.f_actual * s.W;
+            // radiance = s.y.f_actual * s.W;
         } else {
             ris_output_reservoir_buffer[lidx_ris] = *current_reservoir;
         }
@@ -593,40 +622,10 @@ extern "C" __global__ void __raygen__path_tracer()
 
             spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
             //   radiance += current_throughput_bxdf * y.radiance_over_pdf * updated_reservoir.W * sysData.numLights;
-            //radiance += current_throughput * current_bxdf * y.radiance_over_pdf * updated_reservoir.W * sysData.numLights;
+            radiance += current_throughput * current_bxdf * y.radiance_over_pdf * updated_reservoir.W * sysData.numLights;
             //radiance = y.f_actual * updated_reservoir.W;
         }
     }
-
-    // ########################
-    // HANDLE RIS LOGIC
-    // ########################
-    if(sysData.cur_iter != sysData.spp) {
-        if (prd.num_ris_samples > 0) {
-            ris_output_reservoir_buffer[lidx_ris] = spatial_output_reservoir_buffer[lidx_spatial]; // Reservoir({0, 0, 0, 0});
-        }
-        radiance = integrator(prd, index);
-        if (index == 256*10) {
-            printf("cur_iter = %d radiance from RIS step = %f %f %f\n", sysData.cur_iter, radiance.x, radiance.y, radiance.z);
-        }
-        // integrator(prd, index);
-    }
-    // if(sysData.cur_iter != sysData.spp){
-    //     if (prd.do_ris_resampling) {
-    //         ris_output_reservoir_buffer[lidx_ris] = Reservoir({0, 0, 0, 0});
-    //     }
-    //     radiance = integrator(prd, index);
-    //     nearest_hit_current = ris_output_reservoir_buffer[lidx_ris].nearest_hit;
-
-    //     if(prd.do_spatial_resampling){
-    //         if(sysData.cur_iter == 0){
-    //             radiance += prd.radiance_first_hit;
-    //         }
-    //     } else {
-    //         radiance += prd.radiance_first_hit;
-    //     }
-    // }
-
 
 
 #if USE_DEBUG_EXCEPTIONS
