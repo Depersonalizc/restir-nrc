@@ -335,184 +335,168 @@ extern "C" __global__ void __raygen__path_tracer()
     int lidx_ris = (theLaunchDim.x * theLaunchDim.y * sysData.cur_iter) + index;
     int lidx_spatial = (theLaunchDim.x * theLaunchDim.y * (sysData.cur_iter - 1)) + index;
 
-    switch (sysData.num_panes) {
-    case 1:
-        if (sysData.pane_a_flags.do_reference) {
-            prd.do_reference           = true;
-            prd.do_ris_resampling      = false;
-            prd.do_temporal_resampling = false;
-            prd.do_spatial_resampling  = false;
-        } else {
-            prd.do_reference           = false;
-            prd.do_ris_resampling      = sysData.pane_a_flags.do_ris;
-            prd.do_temporal_resampling = sysData.pane_a_flags.do_temporal_reuse;
-            prd.do_spatial_resampling  = sysData.pane_a_flags.do_spatial_reuse;
-        }
-        break;
-    case 2:
-    {
-        const PaneFlags& pane_flags = (theLaunchIndex.x < theLaunchDim.x * 0.5) ?
-                                          sysData.pane_a_flags : sysData.pane_b_flags;
-        if (pane_flags.do_reference) {
-            prd.do_reference           = true;
-            prd.do_ris_resampling      = false;
-            prd.do_temporal_resampling = false;
-            prd.do_spatial_resampling  = false;
-        } else {
-            prd.do_reference           = false;
-            prd.do_ris_resampling      = pane_flags.do_ris;
-            prd.do_temporal_resampling = pane_flags.do_temporal_reuse;
-            prd.do_spatial_resampling  = pane_flags.do_spatial_reuse;
-        }
-    }
-    break;   
-    case 3:
-    {
-        const PaneFlags& pane_flags = (theLaunchIndex.x < theLaunchDim.x * 0.33) ?
-                                          sysData.pane_a_flags : (theLaunchIndex.x < theLaunchDim.x * 0.67) ?
-                                                                                       sysData.pane_b_flags : sysData.pane_c_flags;
-        if (pane_flags.do_reference) {
-            prd.do_reference           = true;
-            prd.do_ris_resampling      = false;
-            prd.do_temporal_resampling = false;
-            prd.do_spatial_resampling  = false;
-        } else {
-            prd.do_reference           = false;
-            prd.do_ris_resampling      = pane_flags.do_ris;
-            prd.do_temporal_resampling = pane_flags.do_temporal_reuse;
-            prd.do_spatial_resampling  = pane_flags.do_spatial_reuse;
-        }
-    }
-    break;
-    default:
-        printf("num_panes can only be 1, 2, or 3\n");
-        radiance = rng3(prd.seed); // random
-        return;
+    // don't question this too much
+    const PaneFlags& pane_flags = sysData.num_panes == 1 ? sysData.pane_a_flags :
+                                  sysData.num_panes == 2 ? (theLaunchIndex.x < theLaunchDim.x * 0.5) ?
+                                                            sysData.pane_a_flags : sysData.pane_b_flags :
+                                  sysData.num_panes == 3 ? (theLaunchIndex.x < theLaunchDim.x * 0.33) ?
+                                                            sysData.pane_a_flags : (theLaunchIndex.x < theLaunchDim.x * 0.67) ?
+                                                            sysData.pane_b_flags : sysData.pane_c_flags
+                                                            : sysData.pane_c_flags;
+
+    if (pane_flags.do_reference) {
+        prd.do_reference           = true;
+        prd.num_ris_samples        = 0;
+        prd.do_temporal_resampling = false;
+        prd.do_spatial_resampling  = false;
+    } else {
+        prd.do_reference           = false;
+        prd.num_ris_samples        = pane_flags.ris_samples;
+        prd.do_temporal_resampling = pane_flags.do_temporal_reuse;
+        prd.do_spatial_resampling  = pane_flags.do_spatial_reuse;
     }
     
     prd.launch_linear_index = lidx_ris;
-    
-    // naive VS ReSxIR (no temporal) 
-    // prd.do_ris_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
-    // prd.do_spatial_resampling = theLaunchIndex.x > theLaunchDim.x * 0.5;
-    // prd.do_temporal_resampling = false;
-    
-    // thirds
-    // prd.do_ris_resampling = theLaunchIndex.x > theLaunchDim.x * 0.33;
-    // prd.do_spatial_resampling = theLaunchIndex.x > theLaunchDim.x * 0.66;
-    // prd.do_temporal_resampling = theLaunchIndex.x > theLaunchDim.x * 0.66;
     
     // clear out previous frame's temp buffer
     if (prd.do_temporal_resampling) {
         temp_reservoir_buffer[index] = Reservoir({0, 0, 0, 0});
     }
-    
-    // ########################
-    // HANDLE RIS LOGIC
-    // ########################
-    if(sysData.cur_iter != sysData.spp) {
-        if (prd.do_ris_resampling) {
-            ris_output_reservoir_buffer[lidx_ris] = Reservoir({0, 0, 0, 0});
-        }
-        radiance = integrator(prd, index);
-        // integrator(prd, index);
-    }
-    
+
     // ########################
     //  HANDLE TEMPORAL LOGIC
     // ########################
     if (prd.do_temporal_resampling && !sysData.first_frame && sysData.cur_iter != sysData.spp){
+        if (index == 256*10) {
+            printf("running temporal reuse: %d\t sysData.cur_iter = %d\n", prd.do_spatial_resampling,  sysData.cur_iter);
+        }
         Reservoir s = Reservoir({0, 0, 0, 0});
-        
+
         Reservoir* current_reservoir = &temp_reservoir_buffer[index]; // choose current reservoir
+        //Reservoir* current_reservoir = &ris_output_reservoir_buffer[lidx_ris]; // choose current reservoir
+
+        if (index == 256*10) {
+            printf("curr reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
+        }
+
         LightSample* y1 = &current_reservoir->y;
-        
+
         updateReservoir(
-            &s, 
-            y1,                                                                                    
+            &s,
+            y1,
             length(y1->radiance_over_pdf) * y1->pdf * current_reservoir->W * current_reservoir->M,
             &prd.seed
             );
-        
+
         // select previous frame's reservoir and combine it
         // and only combine if you actually hit something (empty reservoir bad!)
-        int prev_index = 
+        int prev_index =
             theLaunchDim.x * theLaunchDim.y * (sysData.cur_iter) +
             theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x; // TODO: how to calculate motion vector??
         Reservoir* prev_frame_reservoir = &spatial_output_reservoir_buffer[prev_index];
         LightSample* y2 = &prev_frame_reservoir->y;
+        if (index == 256*10) {
+            printf("prev frame reservoir w_sum = %f\tW = %f\tM = %d\n", prev_frame_reservoir->w_sum, prev_frame_reservoir->W, prev_frame_reservoir->M);
+        }
         if (prev_frame_reservoir->M >= current_reservoir->M){
             prev_frame_reservoir->M = current_reservoir->M;
         }
-        
+
         updateReservoir(
-            &s, 
-            y2,                                                                                    
+            &s,
+            y2,
             length(y2->radiance_over_pdf) * y2->pdf * prev_frame_reservoir->W * prev_frame_reservoir->M,
             &prd.seed
             );
-        
+
         s.M = current_reservoir->M + prev_frame_reservoir->M;
-        s.W = 
+        s.W =
             (1.0f / (length(s.y.radiance_over_pdf) * s.y.pdf)) *  // 1 / p_hat
             (1.0f / s.M) *
             s.w_sum;
         if(isnan(s.W) || s.M == 0.f){ s.W = 0; }
-        
+
+        if (index == 256*10) {
+            printf("temporal reservoir final w_sum = %f\tW = %f\tM = %d\n", s.w_sum, s.W, s.M);
+        }
+
         ris_output_reservoir_buffer[lidx_ris] = s;
+
+        if (index == 256*10) {
+            printf("s.y.f_actual = %f\t s.W = %f\n", s.y.f_actual,  s.W);
+        }
+        radiance = s.y.f_actual * s.W;
     }
-    
+
     // ########################
     // HANDLE SPATIAL LOGIC
     // ########################
     if (prd.do_spatial_resampling && sysData.cur_iter != 0){
+        if (index == 256*10) {
+            printf("running spatial reuse: %d\t sysData.cur_iter = %d\n", prd.do_spatial_resampling,  sysData.cur_iter);
+        }
         Reservoir updated_reservoir = ris_output_reservoir_buffer[lidx_spatial];
-        if(updated_reservoir.W != 0){
-            
-            int k = 5; 
-            int radius = 30; 
+        if (updated_reservoir.W != 0) {
+
+            int k = 5;
+            int radius = 30;
             int num_k_sampled = 0;
             int total_M = updated_reservoir.M;
-            
+
             while(num_k_sampled < k){
                 float2 sample = (rng2(prd.seed) - 0.5f) * radius * 2.0f;
                 float squared_dist = sample.x * sample.x + sample.y * sample.y;
                 if(squared_dist > radius * radius) continue;
-                
+
                 int _x = (int)sample.x + theLaunchIndex.x;
                 int _y = (int)sample.y + theLaunchIndex.y;
                 if(_x < 0 || _x >= theLaunchDim.x) continue;
                 if(_y < 0 || _y >= theLaunchDim.y) continue;
                 if(_x == theLaunchIndex.x && _y == theLaunchIndex.y) continue;
-                
-                unsigned int neighbor_index = 
-                    theLaunchDim.x * theLaunchDim.y * (sysData.cur_iter - 1) + 
+
+                unsigned int neighbor_index =
+                    theLaunchDim.x * theLaunchDim.y * (sysData.cur_iter - 1) +
                     _y * theLaunchDim.x + _x;
                 Reservoir* neighbor_reservoir = &ris_output_reservoir_buffer[neighbor_index];
                 LightSample* y = &neighbor_reservoir->y;
-                
+
                 updateReservoir(
-                    &updated_reservoir, 
-                    y,                                                                                    
+                    &updated_reservoir,
+                    y,
                     length(y->radiance_over_pdf) * y->pdf * neighbor_reservoir->W * neighbor_reservoir->M,
                     &prd.seed
                     );
                 total_M += neighbor_reservoir->M;
-                
-                num_k_sampled += 1; 
+
+                num_k_sampled += 1;
             }
-            
+
             LightSample y = updated_reservoir.y;
             updated_reservoir.M = total_M;
-            updated_reservoir.W = 
+            updated_reservoir.W =
                 (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *  // 1 / p_hat
                 (1.0f / updated_reservoir.M) *
                 updated_reservoir.w_sum;
-            
+
             spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
-            radiance = y.f_actual * updated_reservoir.W;
+            //radiance = y.f_actual * updated_reservoir.W;
         }
     }
+
+    // ########################
+    // HANDLE RIS LOGIC
+    // ########################
+    if(sysData.cur_iter != sysData.spp) {
+        if (prd.num_ris_samples > 0) {
+            ris_output_reservoir_buffer[lidx_ris] = spatial_output_reservoir_buffer[lidx_spatial]; // Reservoir({0, 0, 0, 0});
+        }
+        radiance = integrator(prd, index);
+        if (index == 256*10) {
+            printf("cur_iter = %d radiance from RIS step = %f %f %f\n", sysData.cur_iter, radiance.x, radiance.y, radiance.z);
+        }
+        // integrator(prd, index);
+    }
+
 
 #if USE_DEBUG_EXCEPTIONS
     // DEBUG Highlight numerical errors.
@@ -553,13 +537,15 @@ extern "C" __global__ void __raygen__path_tracer()
         }
         buffer[index] = result;
 #else // if !USE_TIME_VIEW
-        if (0 < sysData.iterationIndex)
-        {
-            const float4 dst = buffer[index]; // RGBA32F
-            
-            radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
+        if (sysData.iterationIndex < sysData.spp) { // FIXME
+            if (0 < sysData.iterationIndex)
+            {
+                const float4 dst = buffer[index]; // RGBA32F
+
+                radiance = lerp(make_float3(dst), radiance, 1.0f / float(sysData.iterationIndex + 1)); // Only accumulate the radiance, alpha stays 1.0f.
+            }
+            buffer[index] = make_float4(radiance, 1.0f);
         }
-        buffer[index] = make_float4(radiance, 1.0f);
 #endif // USE_TIME_VIEW
 
 #else // if !USE_FP32_OUPUT

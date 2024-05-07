@@ -106,30 +106,31 @@ struct Reservoir
   float3 nearest_hit;
 };
 
+static constexpr Reservoir zero_reservoir = {0,0,0,0};
+
 // reservoir update
 __forceinline__ __device__ void updateReservoir(Reservoir* r, LightSample* x_i, float w_i, unsigned int* seed)
-{ 
-  // from algorithm 2
-  r->w_sum += w_i;
-  r->M += 1;
-
-  // float3 test_rad = x_i->radiance_over_pdf;
-  // if(test_rad.x == test_rad.y && test_rad.x == test_rad.z){
-  //   // printf("ALL GREY NOW\n");
-  // } else {
-  //   printf("w_i = %f, w_sum = %f, NOT GREY\n", w_i, r->w_sum);
-  // }
-
-  if(rng(*seed) < w_i / r->w_sum){
-    r->y = *x_i;
+{
+    r->w_sum += w_i;
+    r->M += 1;
 
     // float3 test_rad = x_i->radiance_over_pdf;
     // if(test_rad.x == test_rad.y && test_rad.x == test_rad.z){
     //   // printf("ALL GREY NOW\n");
     // } else {
-    //   printf("NOT GREY\n");
+    //   printf("w_i = %f, w_sum = %f, NOT GREY\n", w_i, r->w_sum);
     // }
-  }
+    // from algorithm 2
+    if(rng(*seed) < w_i / r->w_sum){
+        r->y = *x_i;
+
+        // float3 test_rad = x_i->radiance_over_pdf;
+        // if(test_rad.x == test_rad.y && test_rad.x == test_rad.z){
+        //   // printf("ALL GREY NOW\n");
+        // } else {
+        //   printf("NOT GREY\n");
+        // }
+    }
 }
 
 #endif // LIGHT_DEFINITION_H

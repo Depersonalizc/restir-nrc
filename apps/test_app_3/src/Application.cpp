@@ -1203,7 +1203,7 @@ void Application::guiWindow()
         if (ImGui::SliderInt("Num panes", &m_renderingGUI.num_panes, 1, 3)) {
             refresh = true;
         }
-        if (ImGui::Checkbox("RIS 1", &m_renderingGUI.pane_a.do_ris)) {
+        if (ImGui::SliderInt("RIS 1", &m_renderingGUI.pane_a.ris_samples, 0, 64)) {
             refresh = true;
         }
         if (ImGui::Checkbox("Spatial reuse 1", &m_renderingGUI.pane_a.do_spatial_reuse)) {
@@ -1212,7 +1212,9 @@ void Application::guiWindow()
         if (ImGui::Checkbox("Temporal reuse 1", &m_renderingGUI.pane_a.do_temporal_reuse)) {
             refresh = true;
         }
-        if (ImGui::Checkbox("RIS 2", &m_renderingGUI.pane_b.do_ris)) {
+
+        if (ImGui::SliderInt("RIS 2", &m_renderingGUI.pane_b.ris_samples, 0, 64)) {
+
             refresh = true;
         }
         if (ImGui::Checkbox("Spatial reuse1 2", &m_renderingGUI.pane_b.do_spatial_reuse)) {
@@ -1221,7 +1223,9 @@ void Application::guiWindow()
         if (ImGui::Checkbox("Temporal reuse1 2", &m_renderingGUI.pane_b.do_temporal_reuse)) {
             refresh = true;
         }
-        if (ImGui::Checkbox("RIS 3", &m_renderingGUI.pane_c.do_ris)) {
+
+        if (ImGui::SliderInt("RIS 3", &m_renderingGUI.pane_c.ris_samples, 0, 64)) {
+
             refresh = true;
         }
         if (ImGui::Checkbox("Spatial reuse1 3", &m_renderingGUI.pane_c.do_spatial_reuse)) {
