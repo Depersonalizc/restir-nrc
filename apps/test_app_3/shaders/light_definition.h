@@ -96,6 +96,8 @@ struct LightSample // In world space coordinates.
   float  pdf;                // Probability density for this light sample projected to solid angle. 1.0 when singular light.
   float3 f_actual;
   float3 throughput_bxdf;
+  float3 throughput;
+  float3 bxdf;
 };
 
 struct Reservoir
@@ -114,22 +116,8 @@ __forceinline__ __device__ void updateReservoir(Reservoir* r, LightSample* x_i, 
   r->w_sum += w_i;
   r->M += 1;
 
-  // float3 test_rad = x_i->radiance_over_pdf;
-  // if(test_rad.x == test_rad.y && test_rad.x == test_rad.z){
-  //   // printf("ALL GREY NOW\n");
-  // } else {
-  //   printf("w_i = %f, w_sum = %f, NOT GREY\n", w_i, r->w_sum);
-  // }
-
   if(rng(*seed) < w_i / r->w_sum){
     r->y = *x_i;
-
-    // float3 test_rad = x_i->radiance_over_pdf;
-    // if(test_rad.x == test_rad.y && test_rad.x == test_rad.z){
-    //   // printf("ALL GREY NOW\n");
-    // } else {
-    //   printf("NOT GREY\n");
-    // }
   }
 }
 

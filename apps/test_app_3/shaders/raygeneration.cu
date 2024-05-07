@@ -227,8 +227,8 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
   // Russian Roulette path termination after a specified number of bounces needs the current depth.
   int depth = 0; // Path segment index. Primary ray is depth == 0.
 
-  // while(depth < 1)
-  while (depth < sysData.pathLengths.y)
+  while(depth < 1)
+//   while (depth < sysData.pathLengths.y)
   {
     // if (index == 0) {
     //     printf("depth = %d\tsysData.pathLengths = %d, %d\tSPP = %d\n",
@@ -356,7 +356,6 @@ extern "C" __global__ void __raygen__path_tracer()
 #if USE_TIME_VIEW
     clock_t clockBegin = clock();
 #endif
-<<<<<<< HEAD
 
   const uint2 theLaunchDim   = make_uint2(optixGetLaunchDimensions()); // For multi-GPU tiling this is (resolution + deviceCount - 1) / deviceCount.
   const uint2 theLaunchIndex = make_uint2(optixGetLaunchIndex());
@@ -390,7 +389,7 @@ extern "C" __global__ void __raygen__path_tracer()
   int lidx_ris = (theLaunchDim.x * theLaunchDim.y * sysData.cur_iter) + index;
   int lidx_spatial = (theLaunchDim.x * theLaunchDim.y * (sysData.cur_iter - 1)) + index;
 
-switch (sysData.num_panes) {
+    switch (sysData.num_panes) {
     case 1:
         if (sysData.pane_a_flags.do_reference) {
             prd.do_reference           = true;
@@ -451,6 +450,7 @@ switch (sysData.num_panes) {
     if (prd.do_temporal_resampling) {
         temp_reservoir_buffer[index] = Reservoir({0, 0, 0, 0});
     }
+    float3 nearest_hit_current = make_float3(0.0);
 
   // ########################
   // HANDLE RIS LOGIC
@@ -460,6 +460,7 @@ switch (sysData.num_panes) {
           ris_output_reservoir_buffer[lidx_ris] = Reservoir({0, 0, 0, 0});
     }
     radiance = integrator(prd, index);
+    nearest_hit_current = ris_output_reservoir_buffer[lidx_ris].nearest_hit;
 
     if(prd.do_spatial_resampling){
       if(sysData.cur_iter == 0){
@@ -469,6 +470,7 @@ switch (sysData.num_panes) {
       radiance += prd.radiance_first_hit;
     }
   }
+  
 
   // ########################
   //  HANDLE TEMPORAL LOGIC
@@ -505,8 +507,10 @@ switch (sysData.num_panes) {
     ) {
       prev_coord_no_hit = false;
     }
+
+    bool prev_too_far = sqrt((double)(offset_x*offset_x + offset_y*offset_y)) > 30.f;
     
-    if(!prev_coord_offscreen && !prev_coord_no_hit){
+    if(!prev_coord_offscreen && !prev_coord_no_hit && !prev_too_far){
       // select previous frame's reservoir and combine it
       // and only combine if you actually hit something (empty reservoir bad!)
       int prev_index = 
@@ -549,10 +553,14 @@ switch (sysData.num_panes) {
         s.w_sum;
       if(isnan(s.W) || s.M == 0.f){ s.W = 0; }
       s.nearest_hit = current_reservoir->nearest_hit;
+      
+    //   s.y.throughput_bxdf = y1->throughput_bxdf;
+    //   s.y.throughput = y1->throughput;
+    //   s.y.bxdf = y2->bxdf;
 
       ris_output_reservoir_buffer[lidx_ris] = s;
-      if(index == 369408){ // 93312
-        printf("PERFORMED TEMPORAL REUSE with offset %i, %i \n", offset_x, offset_y);
+      if(index == 131270){ // 93312
+        printf("PERFORMED TEMPORAL REUSE with offset %i, %i, M = %i \n", offset_x, offset_y, s.M);
       }
     }
 
@@ -566,10 +574,12 @@ switch (sysData.num_panes) {
   // ########################
   if(prd.do_spatial_resampling && sysData.cur_iter != 0){
     Reservoir updated_reservoir = ris_output_reservoir_buffer[lidx_spatial];
+    float3 nearest_hit_current = updated_reservoir.nearest_hit;
     float3 current_throughput_bxdf = updated_reservoir.y.throughput_bxdf;
+    float3 current_throughput = updated_reservoir.y.throughput;
+    float3 current_bxdf = updated_reservoir.y.bxdf;
     
     if(updated_reservoir.W != 0){
-
       int k = 5; 
       int radius = 30; 
       int num_k_sampled = 0;
@@ -609,10 +619,17 @@ switch (sysData.num_panes) {
         (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *  // 1 / p_hat
         (1.0f / updated_reservoir.M) *
         updated_reservoir.w_sum;
+      updated_reservoir.nearest_hit = nearest_hit_current;
+
+      updated_reservoir.y.bxdf = current_bxdf;
+      updated_reservoir.y.throughput = current_throughput;
+    //   updated_reservoir.y.throughput_bxdf = current_throughput_bxdf;
 
       spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
-      radiance += current_throughput_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
+    //   radiance += current_throughput_bxdf * y.radiance_over_pdf * updated_reservoir.W * sysData.numLights;
+      radiance += current_throughput * current_bxdf * y.radiance_over_pdf * updated_reservoir.W * sysData.numLights;
     }
+  }
 
 #if USE_DEBUG_EXCEPTIONS
     // DEBUG Highlight numerical errors.
