@@ -720,15 +720,19 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
   // IMPLEMENT RESTIR HERE!!!
   // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
-  const int numLights = sysData.numLights;
+  // const int numLights = sysData.numLights;
+  const int numLights = 1;
 
-  bool do_ris = thePrd->num_ris_samples > 0;
+  // printf("numLights = %d\n", numLights);
+
+  bool do_ris = thePrd->num_ris_samples > 0 && thePrd->depth == 0;
 
   if (sysData.directLighting && 0 < numLights && (thePrd->eventType & (mi::neuraylib::BSDF_EVENT_DIFFUSE | mi::neuraylib::BSDF_EVENT_GLOSSY)))
   {
     // Sample one of many lights.
     // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
-      const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
+      // const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
+    const int indexLight = 1;
 
     // attempt to get rid of mysterious light...
     // int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * (numLights - 1))), 0, (numLights - 1) - 1) : 0;
@@ -744,7 +748,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         Reservoir* ris_output_reservoir_buffer = reinterpret_cast<Reservoir*>(sysData.RISOutputReservoirBuffer);
         Reservoir* temp_buffer = reinterpret_cast<Reservoir*>(sysData.TempReservoirBuffer);
 
-        if (tidx == 256*10) {
+        if (tidx == 131328) {
             printf("num_lights = %d\tlight_idx = %d\tlight type = %d\n", numLights, indexLight, sysData.lightDefinitions[indexLight].typeLight);
         }
 
@@ -766,12 +770,19 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             float p_hat = length(X_i.radiance_over_pdf) * X_i.pdf;
 
             float lerp_scale = sum_p_hat;
+            float m_i;
             sum_p_hat += p_hat;
-            lerp_scale /= sum_p_hat;
+            if (sum_p_hat == 0) {
+              lerp_scale = 0;
+              m_i = 0;
+            } else {
+              lerp_scale /= sum_p_hat;
+              m_i = p_hat / sum_p_hat;
+
+            }
             current_reservoir->W *= lerp_scale;
             current_reservoir->w_sum *= lerp_scale;
 
-            float m_i = p_hat / sum_p_hat;
             // float W_X = 1.0f / X_i.pdf;
             // if(X_i.pdf == 0.f) W_X = 1.0f / (1.0f / M);
 
@@ -780,7 +791,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
             float w_i = m_i * length(X_i.radiance_over_pdf); // p_hat * W_X;
 
-            if (tidx == 256*10) {
+            if (tidx == 131328) {
                 printf("inside hit: generating light sample X_i.radiance_over_pdf = %f\tX_i.pdf = %f\n",
                        length(X_i.radiance_over_pdf), X_i.pdf);
                 printf("inside hit: reservoir before update w_sum = %f\tW = %f\tM = %d\n",
@@ -788,7 +799,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             }
             updateReservoir(current_reservoir, &X_i, w_i, &thePrd->seed);
 
-            if (tidx == 256*10) {
+            if (tidx == 131328) {
                 printf("inside hit: reservoir after update w_sum = %f\tW = %f\tM = %d\n",
                        current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
             }
@@ -797,7 +808,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         // calculate W and select better candidate y
         LightSample y = current_reservoir->y;
 
-        if (tidx == 256*10) {
+        if (tidx == 131328) {
             printf("inside hit: updated light sample y.radiance_over_pdf = %f\ty.pdf = %f\tdirection = %f,%f,%f, dist = %f\n",
                    length(y.radiance_over_pdf), y.pdf, y.direction.x, y.direction.y, y.direction.z, y.distance);
             printf("inside hit: reservoir w_sum = %f\tW = %f\tM = %d\n",
@@ -808,7 +819,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *  // 1 / p_hat
             current_reservoir->w_sum;                         // w_sum
 
-        if (tidx == 256*10) {
+        if (tidx == 131328) {
             printf("current_reservoir->W = %f\n", current_reservoir->W);
         }
 
@@ -856,7 +867,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
 
         int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-        if (tidx == 256*10) {
+        if (tidx == 131328) {
             printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
                         thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lightSample.direction.x, lightSample.direction.y, lightSample.direction.z);
         }
@@ -877,7 +888,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
           // The sampled emission needs to be scaled by the inverse probability to have selected this light,
           // Selecting one of many lights means the inverse of 1.0f / numLights.
           // This is using the path throughput before the sampling modulated it above.
-            if (tidx == 256*10) {
+            if (tidx == 131328) {
                 printf("Point NOT in shadow\n");
             }
           if(do_ris){
@@ -889,7 +900,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             current_reservoir->y.f_actual = f_q;
 
             int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-            if (tidx == 256*10) {
+            if (tidx == 131328) {
                 printf("Point NOT in shadow: reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
             }
             thePrd->radiance += f_q * W;
@@ -901,7 +912,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         else {
             if(do_ris) {
                 int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                if (tidx == 256*10) {
+                if (tidx == 131328) {
                     printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
                 }
                 *current_reservoir = zero_reservoir;
@@ -910,7 +921,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
       } else {
           if(do_ris) {
               int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-              if (tidx == 256*10) {
+              if (tidx == 131328) {
                   printf("Zeroing out reservoir due to eval_data.pdf = %f\tisNotNull(bxdf) = %d\n", eval_data.pdf, isNotNull(bxdf));
               }
               *current_reservoir = zero_reservoir;
@@ -920,7 +931,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
   }
 
   int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-  if (tidx == 256*10 && do_ris) {
+  if (tidx == 131328 && do_ris) {
       Reservoir* current_reservoir;
 
       int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;

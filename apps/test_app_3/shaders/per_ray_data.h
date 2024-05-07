@@ -91,6 +91,8 @@ struct PerRayData
 
   mi::neuraylib::Bsdf_event_type eventType; // The type of events created by BSDF importance sampling.
 
+  int depth;
+
   unsigned int seed;  // Random number generator input.
   uint2 launchDim;
   uint2 launchIndex;

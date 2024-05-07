@@ -278,6 +278,7 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
     }
 
     ++depth; // Next path segment.
+    prd.depth += 1;
   }
   
   return prd.radiance;
@@ -312,6 +313,7 @@ extern "C" __global__ void __raygen__path_tracer()
     prd.seed = tea<4>(theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
     prd.launchDim = theLaunchDim;
     prd.launchIndex = theLaunchIndex;
+    prd.depth = 0;
     
     // Decoupling the pixel coordinates from the screen size will allow for partial rendering algorithms.
     // Resolution is the actual full rendering resolution and for the single GPU strategy, theLaunchDim == resolution.
@@ -367,7 +369,7 @@ extern "C" __global__ void __raygen__path_tracer()
     //  HANDLE TEMPORAL LOGIC
     // ########################
     if (prd.do_temporal_resampling && !sysData.first_frame && sysData.cur_iter != sysData.spp){
-        if (index == 256*10) {
+        if (index == 131328) {
             printf("running temporal reuse: %d\t sysData.cur_iter = %d\n", prd.do_spatial_resampling,  sysData.cur_iter);
         }
         Reservoir s = Reservoir({0, 0, 0, 0});
@@ -375,7 +377,7 @@ extern "C" __global__ void __raygen__path_tracer()
         Reservoir* current_reservoir = &temp_reservoir_buffer[index]; // choose current reservoir
         //Reservoir* current_reservoir = &ris_output_reservoir_buffer[lidx_ris]; // choose current reservoir
 
-        if (index == 256*10) {
+        if (index == 131328) {
             printf("curr reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
         }
 
@@ -395,7 +397,7 @@ extern "C" __global__ void __raygen__path_tracer()
             theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x; // TODO: how to calculate motion vector??
         Reservoir* prev_frame_reservoir = &spatial_output_reservoir_buffer[prev_index];
         LightSample* y2 = &prev_frame_reservoir->y;
-        if (index == 256*10) {
+        if (index == 131328) {
             printf("prev frame reservoir w_sum = %f\tW = %f\tM = %d\n", prev_frame_reservoir->w_sum, prev_frame_reservoir->W, prev_frame_reservoir->M);
         }
         if (prev_frame_reservoir->M >= current_reservoir->M){
@@ -416,13 +418,13 @@ extern "C" __global__ void __raygen__path_tracer()
             s.w_sum;
         if(isnan(s.W) || s.M == 0.f){ s.W = 0; }
 
-        if (index == 256*10) {
+        if (index == 131328) {
             printf("temporal reservoir final w_sum = %f\tW = %f\tM = %d\n", s.w_sum, s.W, s.M);
         }
 
         ris_output_reservoir_buffer[lidx_ris] = s;
 
-        if (index == 256*10) {
+        if (index == 131328) {
             printf("s.y.f_actual = %f\t s.W = %f\n", s.y.f_actual,  s.W);
         }
         radiance = s.y.f_actual * s.W;
@@ -432,10 +434,14 @@ extern "C" __global__ void __raygen__path_tracer()
     // HANDLE SPATIAL LOGIC
     // ########################
     if (prd.do_spatial_resampling && sysData.cur_iter != 0){
-        if (index == 256*10) {
+        if (index == 131328) {
             printf("running spatial reuse: %d\t sysData.cur_iter = %d\n", prd.do_spatial_resampling,  sysData.cur_iter);
         }
         Reservoir updated_reservoir = ris_output_reservoir_buffer[lidx_spatial];
+        if (index == 131328) {
+            printf("spatial reservoir TEST INTIIAL VALUE = %f\tW = %f\tM = %d\n", updated_reservoir.w_sum, updated_reservoir.W, updated_reservoir.M);
+        }
+
         if (updated_reservoir.W != 0) {
 
             int k = 5;
@@ -491,7 +497,7 @@ extern "C" __global__ void __raygen__path_tracer()
             ris_output_reservoir_buffer[lidx_ris] = spatial_output_reservoir_buffer[lidx_spatial]; // Reservoir({0, 0, 0, 0});
         }
         radiance = integrator(prd, index);
-        if (index == 256*10) {
+        if (index == 131328) {
             printf("cur_iter = %d radiance from RIS step = %f %f %f\n", sysData.cur_iter, radiance.x, radiance.y, radiance.z);
         }
         // integrator(prd, index);
