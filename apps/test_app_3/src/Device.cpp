@@ -1987,7 +1987,7 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
         CU_CHECK( cuMemcpyHtoD(m_d_psnrData, &psnrData, sizeof(PsnrData)) );
 
         void* args[1] = { &m_d_psnrData };
-        std::cout << "PSNR: blockdim " << blockDimX << ", griddim " << gridDimX << std::endl;
+        std::cout << "RMAE: blockdim " << blockDimX << ", griddim " << gridDimX << std::endl;
 
         CU_CHECK( cuLaunchKernel(m_function_psnr_precomp,    // CUfunction f,
                                 gridDimX,            // unsigned int gridDimX,

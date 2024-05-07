@@ -435,9 +435,6 @@ extern "C" __global__ void __raygen__path_tracer()
         if (index == 256*10) {
             printf("curr reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
         }
-
-        LightSample* y1 = &current_reservoir->y;
-
         updateReservoir(
             &s,
             y1,
@@ -581,14 +578,6 @@ extern "C" __global__ void __raygen__path_tracer()
                 num_k_sampled += 1;
             }
 
-            LightSample y = updated_reservoir.y;
-            updated_reservoir.M = total_M;
-            updated_reservoir.W =
-                (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *  // 1 / p_hat
-                (1.0f / updated_reservoir.M) *
-                updated_reservoir.w_sum;
-
-            spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
 
             LightSample y = updated_reservoir.y;
             updated_reservoir.M = total_M;
