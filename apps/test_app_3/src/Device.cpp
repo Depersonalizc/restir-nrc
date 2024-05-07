@@ -1927,10 +1927,6 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
 
         m_isDirtyOutputBuffer = false; // Buffer is allocated with new size.
         m_isDirtySystemData   = true;  // Now the sysData on the device needs to be updated, and that needs a sync!
-
-        std::cout << "num lights loaded: " << m_systemData.numLights << std::endl;
-        // std::cout << "light type" << m_systemData.lightDefinitions[0].typeLight << std::endl;
-        // std::cout << "light type" << m_systemData.lightDefinitions[1].typeLight << std::endl;
     }
 
     // NO swapping needed
@@ -1938,6 +1934,7 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
     // m_systemData.oldReservoirBuffer = m_systemData.reservoirBuffer;
     // m_systemData.reservoirBuffer = temp;
     m_systemData.cur_iter = m_systemData.iterationIndex % (m_systemData.spp + 1);
+    m_systemData.rand_seed = rand();
     if(m_systemData.cur_iter == 0) m_systemData.first_frame = true;
 
     if (true) // Update the whole SystemData block because more than the iterationIndex changed. This normally means a GUI interaction. Just sync.

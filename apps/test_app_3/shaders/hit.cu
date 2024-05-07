@@ -736,7 +736,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     LightSample lightSample = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light.typeLight, light, thePrd);
 
     Reservoir* current_reservoir;
-    if (thePrd->do_ris_resampling) {
+    if (thePrd->do_ris_resampling && thePrd->first_hit) {
         int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
         int lidx = thePrd->launch_linear_index;
         Reservoir* ris_output_reservoir_buffer = reinterpret_cast<Reservoir*>(sysData.RISOutputReservoirBuffer);
@@ -750,35 +750,33 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         }
 
         // algorithm 2 from course notes
-        if (thePrd->do_ris_resampling) {
-          int M = 32;
+        int M = 32;
 
-          // generate candidates (X_1, ..., X_M)
-          for(int i = 0; i < M; i++) {
-            LightSample X_i = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light.typeLight, light, thePrd);
+        // generate candidates (X_1, ..., X_M)
+        for(int i = 0; i < M; i++) {
+          LightSample X_i = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light.typeLight, light, thePrd);
 
-            float m_i = 1.0f / M;
-            float W_X = 1.0f / X_i.pdf;
-            if(X_i.pdf == 0.f) W_X = 1.0f / (1.0f / M);
+          float m_i = 1.0f / M;
+          float W_X = 1.0f / X_i.pdf;
+          if(X_i.pdf == 0.f) W_X = 1.0f / (1.0f / M);
 
-            float p_hat = length(X_i.radiance_over_pdf) * X_i.pdf;
-            if(isnan(p_hat) || isinf(p_hat)) p_hat = 0.f;
+          float p_hat = length(X_i.radiance_over_pdf) * X_i.pdf;
+          if(isnan(p_hat) || isinf(p_hat)) p_hat = 0.f;
 
-            float w_i = m_i * p_hat * W_X;
+          float w_i = m_i * p_hat * W_X;
 
-            updateReservoir(current_reservoir, &X_i, w_i, &thePrd->seed);
-          }
-
-          // calculate W and select better candidate y
-          LightSample y = current_reservoir->y;
-          current_reservoir->W =
-            (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *  // 1 / p_hat
-            current_reservoir->w_sum;                         // w_sum
-          if(isnan(current_reservoir->W)) current_reservoir->W = 0;
-
-          current_reservoir->nearest_hit = thePrd->pos;
-          lightSample = y;
+          updateReservoir(current_reservoir, &X_i, w_i, &thePrd->seed);
         }
+
+        // calculate W and select better candidate y
+        LightSample y = current_reservoir->y;
+        current_reservoir->W =
+          (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *  // 1 / p_hat
+          current_reservoir->w_sum;                         // w_sum
+        if(isnan(current_reservoir->W)) current_reservoir->W = 0;
+
+        current_reservoir->nearest_hit = thePrd->pos;
+        lightSample = y;
     }
 
     if (0.0f < lightSample.pdf && 0 <= idxCallScatteringEval)
@@ -835,15 +833,18 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
           // Selecting one of many lights means the inverse of 1.0f / numLights.
           // This is using the path throughput before the sampling modulated it above.
 
-          if(thePrd->do_ris_resampling){
+          if(thePrd->do_ris_resampling && thePrd->first_hit){
             float W = current_reservoir->W;
             float3 f_q = 
               lightSample.pdf * lightSample.radiance_over_pdf *
               throughput * bxdf * (float(numLights) * weightMIS);
 
             current_reservoir->y.f_actual = f_q;
+            current_reservoir->y.throughput_bxdf = throughput * bxdf;
+            current_reservoir->y.throughput = throughput;
+            current_reservoir->y.bxdf = bxdf;
 
-            thePrd->radiance += f_q * W;
+            thePrd->radiance_first_hit += f_q * W;
             
           } else {
             thePrd->radiance += throughput * bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
