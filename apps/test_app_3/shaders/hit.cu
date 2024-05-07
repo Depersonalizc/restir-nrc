@@ -738,7 +738,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     LightSample lightSample = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light.typeLight, light, thePrd);
 
     Reservoir* current_reservoir;
-    if (do_ris) {
+    if (do_ris && thePrd->first_hit) {
         int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
         int lidx = thePrd->launch_linear_index;
         Reservoir* ris_output_reservoir_buffer = reinterpret_cast<Reservoir*>(sysData.RISOutputReservoirBuffer);
@@ -816,7 +816,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
         current_reservoir->nearest_hit = thePrd->pos;
         lightSample = y;
-
     }
 
     if (0.0f < lightSample.pdf && 0 <= idxCallScatteringEval)
@@ -880,19 +879,23 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             if (tidx == 256*10) {
                 printf("Point NOT in shadow\n");
             }
-          if(do_ris){
+
+          if(do_ris && thePrd->first_hit){
             float W = current_reservoir->W;
             float3 f_q = 
               lightSample.pdf * lightSample.radiance_over_pdf *
               throughput * bxdf * (float(numLights) * weightMIS);
 
             current_reservoir->y.f_actual = f_q;
+            current_reservoir->y.throughput_bxdf = throughput * bxdf;
+            current_reservoir->y.throughput = throughput;
+            current_reservoir->y.bxdf = bxdf;
 
             int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
             if (tidx == 256*10) {
                 printf("Point NOT in shadow: reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
             }
-            thePrd->radiance += f_q * W;
+            thePrd->radiance_first_hit += f_q * W;
             
           } else {
             thePrd->radiance += throughput * bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);

@@ -385,12 +385,23 @@ Application::Application(GLFWwindow* window, const Options& options)
 
     m_mdl_wrapper->initMaterialsMDL(m_materialsMDL, m_raytracer_ref->m_devicesActive); // The MaterialMDL structure will receive all per material reference data.
 
+    printf("Checkpoint A\n");
+
     // Only when all MDL materials have been initialized, the information about which of them contains emissions is available inside the m_materialsMDL.
     // Traverse the scene once and generate light definitions for the meshes with emissive materials.
     createMeshLights();
 
+    
+    printf("Checkpoint B\n");
+
     m_raytracer->initScene(m_scene, m_idGeometry); // m_idGeometry is the number of geometries in the scene.
+    
+    printf("Checkpoint C\n");
+    
     m_raytracer->initLights(m_lightsGUI);          // With arbitrary mesh lights, the geometry attributes and indices can only be filled after initScene().
+
+
+    printf("Checkpoint D\n");
 
     if (options.getComputeRef()) {
         m_raytracer_ref->initScene(m_scene, m_idGeometry); // m_idGeometry is the number of geometries in the scene.
@@ -554,13 +565,13 @@ bool Application::render()
       restartRendering(true);
     }
 
-    //std::cout << "iterationIndex: " << iterationIndex << ", m_spp: " << m_spp << std::endl;
+    // std::cout << "iterationIndex: " << iterationIndex << ", m_spp: " << m_spp << std::endl;
 
     // For continuous rendering (TODO: toggle with GUI option)
-    // if (iterationIndex > m_spp) {
-    //     restartRendering(false);
-    //     m_raytracer->m_iterationIndex = 0;
-    // }
+    if (iterationIndex > m_spp) {
+        restartRendering(false);
+        m_raytracer->m_iterationIndex = 0;
+    }
 
     // When the renderer has completed all iterations, change the GUI title bar to green.
     // const bool complete = ((unsigned int) m_spp + 1 <= iterationIndex);

@@ -94,7 +94,10 @@ struct LightSample // In world space coordinates.
   float  distance;           // Distance between surface and light sample positon, RT_DEFAULT_MAX for environment light.
   float3 radiance_over_pdf;  // Radiance of this light sample divided by the pdf.
   float  pdf;                // Probability density for this light sample projected to solid angle. 1.0 when singular light.
-  float3  f_actual;
+  float3 f_actual;
+  float3 throughput_bxdf;
+  float3 throughput;
+  float3 bxdf;
 };
 
 struct Reservoir
@@ -109,27 +112,13 @@ struct Reservoir
 static constexpr Reservoir zero_reservoir = {0,0,0,0};
 
 // reservoir update
-__forceinline__ __device__ void updateReservoir(Reservoir* r, LightSample* x_i, float w_i, unsigned int* seed)
-{
+__forceinline__ __device__ void updateReservoir(Reservoir* r, LightSample* x_i, float w_i, unsigned int* seed) {
+    // from algorithm 2
     r->w_sum += w_i;
     r->M += 1;
 
-    // float3 test_rad = x_i->radiance_over_pdf;
-    // if(test_rad.x == test_rad.y && test_rad.x == test_rad.z){
-    //   // printf("ALL GREY NOW\n");
-    // } else {
-    //   printf("w_i = %f, w_sum = %f, NOT GREY\n", w_i, r->w_sum);
-    // }
-    // from algorithm 2
     if(rng(*seed) < w_i / r->w_sum){
         r->y = *x_i;
-
-        // float3 test_rad = x_i->radiance_over_pdf;
-        // if(test_rad.x == test_rad.y && test_rad.x == test_rad.z){
-        //   // printf("ALL GREY NOW\n");
-        // } else {
-        //   printf("NOT GREY\n");
-        // }
     }
 }
 
