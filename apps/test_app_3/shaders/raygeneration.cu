@@ -176,7 +176,8 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
   // Russian Roulette path termination after a specified number of bounces needs the current depth.
   int depth = 0; // Path segment index. Primary ray is depth == 0.
 
-  while (depth < sysData.pathLengths.y)
+//   while (depth < sysData.pathLengths.y)
+    while(depth < 1)
   {
       // if (index == 0) {
       //     printf("depth = %d\tsysData.pathLengths = %d, %d\tSPP = %d\n",
@@ -366,11 +367,22 @@ extern "C" __global__ void __raygen__path_tracer()
     }
 
     // ########################
+    // HANDLE RIS LOGIC
+    // ########################
+    if(sysData.cur_iter != sysData.spp) {
+        if (prd.num_ris_samples > 0) {
+            ris_output_reservoir_buffer[lidx_ris] = Reservoir({0, 0, 0, 0});
+        }
+        radiance = integrator(prd, index);
+    }
+
+
+    // ########################
     //  HANDLE TEMPORAL LOGIC
     // ########################
     if (prd.do_temporal_resampling && !sysData.first_frame && sysData.cur_iter != sysData.spp){
         if (index == 131328) {
-            printf("running temporal reuse: %d\t sysData.cur_iter = %d\n", prd.do_spatial_resampling,  sysData.cur_iter);
+            // printf("running temporal reuse: %d\t sysData.cur_iter = %d\n", prd.do_spatial_resampling,  sysData.cur_iter);
         }
         Reservoir s = Reservoir({0, 0, 0, 0});
 
@@ -378,7 +390,7 @@ extern "C" __global__ void __raygen__path_tracer()
         //Reservoir* current_reservoir = &ris_output_reservoir_buffer[lidx_ris]; // choose current reservoir
 
         if (index == 131328) {
-            printf("curr reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
+            // printf("curr reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
         }
 
         LightSample* y1 = &current_reservoir->y;
@@ -398,7 +410,7 @@ extern "C" __global__ void __raygen__path_tracer()
         Reservoir* prev_frame_reservoir = &spatial_output_reservoir_buffer[prev_index];
         LightSample* y2 = &prev_frame_reservoir->y;
         if (index == 131328) {
-            printf("prev frame reservoir w_sum = %f\tW = %f\tM = %d\n", prev_frame_reservoir->w_sum, prev_frame_reservoir->W, prev_frame_reservoir->M);
+            // printf("prev frame reservoir w_sum = %f\tW = %f\tM = %d\n", prev_frame_reservoir->w_sum, prev_frame_reservoir->W, prev_frame_reservoir->M);
         }
         if (prev_frame_reservoir->M >= current_reservoir->M){
             prev_frame_reservoir->M = current_reservoir->M;
@@ -419,28 +431,20 @@ extern "C" __global__ void __raygen__path_tracer()
         if(isnan(s.W) || s.M == 0.f){ s.W = 0; }
 
         if (index == 131328) {
-            printf("temporal reservoir final w_sum = %f\tW = %f\tM = %d\n", s.w_sum, s.W, s.M);
+            // printf("temporal reservoir final w_sum = %f\tW = %f\tM = %d\n", s.w_sum, s.W, s.M);
         }
 
         ris_output_reservoir_buffer[lidx_ris] = s;
-
-        if (index == 131328) {
-            printf("s.y.f_actual = %f\t s.W = %f\n", s.y.f_actual,  s.W);
-        }
-        radiance = s.y.f_actual * s.W;
     }
 
     // ########################
     // HANDLE SPATIAL LOGIC
     // ########################
     if (prd.do_spatial_resampling && sysData.cur_iter != 0){
-        if (index == 131328) {
-            printf("running spatial reuse: %d\t sysData.cur_iter = %d\n", prd.do_spatial_resampling,  sysData.cur_iter);
-        }
         Reservoir updated_reservoir = ris_output_reservoir_buffer[lidx_spatial];
-        if (index == 131328) {
-            printf("spatial reservoir TEST INTIIAL VALUE = %f\tW = %f\tM = %d\n", updated_reservoir.w_sum, updated_reservoir.W, updated_reservoir.M);
-        }
+        float3 nearest_hit_current = updated_reservoir.nearest_hit;
+        float3 current_throughput = updated_reservoir.y.throughput;
+        float3 current_bxdf = updated_reservoir.y.bxdf;
 
         if (updated_reservoir.W != 0) {
 
@@ -484,24 +488,15 @@ extern "C" __global__ void __raygen__path_tracer()
                 (1.0f / updated_reservoir.M) *
                 updated_reservoir.w_sum;
 
+            updated_reservoir.nearest_hit = nearest_hit_current;
+            updated_reservoir.y.bxdf = current_bxdf;
+            updated_reservoir.y.throughput = current_throughput;
+
             spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
-            //radiance = y.f_actual * updated_reservoir.W;
+            radiance = current_throughput * current_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
         }
     }
 
-    // ########################
-    // HANDLE RIS LOGIC
-    // ########################
-    if(sysData.cur_iter != sysData.spp) {
-        if (prd.num_ris_samples > 0) {
-            ris_output_reservoir_buffer[lidx_ris] = spatial_output_reservoir_buffer[lidx_spatial]; // Reservoir({0, 0, 0, 0});
-        }
-        radiance = integrator(prd, index);
-        if (index == 131328) {
-            printf("cur_iter = %d radiance from RIS step = %f %f %f\n", sysData.cur_iter, radiance.x, radiance.y, radiance.z);
-        }
-        // integrator(prd, index);
-    }
 
 
 #if USE_DEBUG_EXCEPTIONS
