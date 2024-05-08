@@ -41,49 +41,49 @@ extern "C" __constant__ SystemData sysData;
 
 __forceinline__ __device__ int2 pixel_from_world_coord(const float2 screen, const LensRay ray, float3 world_coord)
 {
-  const CameraDefinition camera = sysData.cameraDefinitions[0];
+    const CameraDefinition camera = sysData.cameraDefinitions[0];
 
-  float A[9] = {
-    camera.U.x, camera.U.y, camera.U.z,
-    camera.V.x, camera.V.y, camera.V.z,
-    camera.W.x, camera.W.y, camera.W.z,
-  };
-  float3 x = world_coord - camera.P;
+    float A[9] = {
+        camera.U.x, camera.U.y, camera.U.z,
+        camera.V.x, camera.V.y, camera.V.z,
+        camera.W.x, camera.W.y, camera.W.z,
+    };
+    float3 x = world_coord - camera.P;
 
-  //    0  1  2
-  // 0  0  3  6
-  // 1  1  4  7 
-  // 2  2  5  8
+    //    0  1  2
+    // 0  0  3  6
+    // 1  1  4  7
+    // 2  2  5  8
 
-  float dt = A[0] * (A[4] * A[8] - A[5] * A[7]) -
-             A[3] * (A[1] * A[8] - A[7] * A[2]) +
-             A[6] * (A[1] * A[5] - A[4] * A[2]);
-  float invdet = 1.f / dt;
+    float dt = A[0] * (A[4] * A[8] - A[5] * A[7]) -
+               A[3] * (A[1] * A[8] - A[7] * A[2]) +
+               A[6] * (A[1] * A[5] - A[4] * A[2]);
+    float invdet = 1.f / dt;
 
-  float minv[9];
-  minv[0] = (A[4] * A[8] - A[5] * A[7]) * invdet;
-  minv[3] = (A[6] * A[5] - A[3] * A[8]) * invdet;
-  minv[6] = (A[3] * A[7] - A[6] * A[4]) * invdet;
-  minv[1] = (A[7] * A[2] - A[1] * A[8]) * invdet;
-  minv[4] = (A[0] * A[8] - A[6] * A[2]) * invdet;
-  minv[7] = (A[1] * A[6] - A[0] * A[7]) * invdet;
-  minv[2] = (A[1] * A[5] - A[2] * A[4]) * invdet;
-  minv[5] = (A[2] * A[3] - A[0] * A[5]) * invdet;
-  minv[8] = (A[0] * A[4] - A[1] * A[3]) * invdet;
+    float minv[9];
+    minv[0] = (A[4] * A[8] - A[5] * A[7]) * invdet;
+    minv[3] = (A[6] * A[5] - A[3] * A[8]) * invdet;
+    minv[6] = (A[3] * A[7] - A[6] * A[4]) * invdet;
+    minv[1] = (A[7] * A[2] - A[1] * A[8]) * invdet;
+    minv[4] = (A[0] * A[8] - A[6] * A[2]) * invdet;
+    minv[7] = (A[1] * A[6] - A[0] * A[7]) * invdet;
+    minv[2] = (A[1] * A[5] - A[2] * A[4]) * invdet;
+    minv[5] = (A[2] * A[3] - A[0] * A[5]) * invdet;
+    minv[8] = (A[0] * A[4] - A[1] * A[3]) * invdet;
 
-  float nx = x.x * minv[0] + x.y * minv[3] + x.z * minv[6];
-  float ny = x.x * minv[1] + x.y * minv[4] + x.z * minv[7];
-  float nz = x.x * minv[2] + x.y * minv[5] + x.z * minv[8];
-  float2 ndc;
-  ndc.x = nx / nz;
-  ndc.y = ny / nz;
+    float nx = x.x * minv[0] + x.y * minv[3] + x.z * minv[6];
+    float ny = x.x * minv[1] + x.y * minv[4] + x.z * minv[7];
+    float nz = x.x * minv[2] + x.y * minv[5] + x.z * minv[8];
+    float2 ndc;
+    ndc.x = nx / nz;
+    ndc.y = ny / nz;
 
-  float2 fragment = (ndc + 1.0f) * 0.5f * screen;
-  int2 pixel_index;
-  pixel_index.x = (int)fragment.x;
-  pixel_index.y = (int)fragment.y;
+    float2 fragment = (ndc + 1.0f) * 0.5f * screen;
+    int2 pixel_index;
+    pixel_index.x = (int)fragment.x;
+    pixel_index.y = (int)fragment.y;
 
-  return pixel_index;
+    return pixel_index;
 }
 
 
@@ -383,20 +383,13 @@ extern "C" __global__ void __raygen__path_tracer()
     // ########################
     //  HANDLE TEMPORAL LOGIC
     // ########################
-    if (prd.do_temporal_resampling && !sysData.first_frame && sysData.cur_iter != sysData.spp){
-        if (index == 131328) {
-            printf("running temporal reuse: %d\t sysData.cur_iter = %d\n", prd.do_spatial_resampling,  sysData.cur_iter);
-        }
+    WORK HERE
+    if (prd.do_temporal_resampling && !sysData.first_frame && sysData.cur_iter != sysData.spp) {
         Reservoir s = Reservoir({0, 0, 0, 0});
 
-        Reservoir* current_reservoir = &temp_reservoir_buffer[index]; // choose current reservoir
-        //Reservoir* current_reservoir = &ris_output_reservoir_buffer[lidx_ris]; // choose current reservoir
-
-        if (index == 131328) {
-            printf("curr reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-        }
-
-        LightSample* y1 = &current_reservoir->y;
+        Reservoir *current_pixel_prev_resevoir = &spatial_output_reservoir_buffer[lidx_ris]; // get current pixel's previous reservoir
+        Reservoir *current_reservoir = &temp_reservoir_buffer[index];                        // choose current reservoir
+        LightSample *y1 = &current_reservoir->y;
 
         updateReservoir(
             &s,
@@ -404,42 +397,66 @@ extern "C" __global__ void __raygen__path_tracer()
             length(y1->radiance_over_pdf) * y1->pdf * current_reservoir->W * current_reservoir->M,
             &prd.seed
             );
+        int2 current_pixel_prev_coord = pixel_from_world_coord(screen, ray, current_pixel_prev_resevoir->nearest_hit);
+        int2 current_pixel_curr_coord = pixel_from_world_coord(screen, ray, current_reservoir->nearest_hit);
+        int offset_x = theLaunchIndex.x - current_pixel_prev_coord.x;
+        int offset_y = theLaunchIndex.y - current_pixel_prev_coord.y;
+        int prev_coord_x = theLaunchIndex.x + offset_x;
+        int prev_coord_y = theLaunchIndex.y + offset_y;
 
-        // select previous frame's reservoir and combine it
-        // and only combine if you actually hit something (empty reservoir bad!)
-        int prev_index =
-            theLaunchDim.x * theLaunchDim.y * (sysData.cur_iter) +
-            theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x; // TODO: how to calculate motion vector??
-        Reservoir* prev_frame_reservoir = &spatial_output_reservoir_buffer[prev_index];
-        LightSample* y2 = &prev_frame_reservoir->y;
-        if (index == 131328) {
-            printf("prev frame reservoir w_sum = %f\tW = %f\tM = %d\n", prev_frame_reservoir->w_sum, prev_frame_reservoir->W, prev_frame_reservoir->M);
-        }
-        if (prev_frame_reservoir->M >= current_reservoir->M){
-            prev_frame_reservoir->M = current_reservoir->M;
-        }
+        bool prev_coord_offscreen = false;
+        if (prev_coord_x < 0 || prev_coord_y < 0)
+            prev_coord_offscreen = true;
+        else if (prev_coord_x >= theLaunchDim.x || prev_coord_y >= theLaunchDim.y)
+            prev_coord_offscreen = true;
 
-        updateReservoir(
-            &s,
-            y2,
-            length(y2->radiance_over_pdf) * y2->pdf * prev_frame_reservoir->W * prev_frame_reservoir->M,
-            &prd.seed
-            );
-
-        s.M = current_reservoir->M + prev_frame_reservoir->M;
-        s.W =
-            (1.0f / (length(s.y.radiance_over_pdf) * s.y.pdf)) *  // 1 / p_hat
-            (1.0f / s.M) *
-            s.w_sum;
-        if(isnan(s.W) || s.M == 0.f){ s.W = 0; }
-
-        if (index == 131328) {
-            printf("temporal reservoir final w_sum = %f\tW = %f\tM = %d\n", s.w_sum, s.W, s.M);
+        bool prev_coord_no_hit = true;
+        if (
+            current_reservoir->nearest_hit.x != 0.f &&
+            current_reservoir->nearest_hit.y != 0.f &&
+            current_reservoir->nearest_hit.z != 0.f
+            ){
+            prev_coord_no_hit = false;
         }
 
-        ris_output_reservoir_buffer[lidx_ris] = s;
+        bool prev_too_far = sqrt((double)(offset_x * offset_x + offset_y * offset_y)) > 5.f;
 
-        //radiance = s.y.f_actual * s.W;
+        if (!prev_coord_offscreen && !prev_coord_no_hit && !prev_too_far) {
+            // select previous frame's reservoir and combine it
+            // and only combine if you actually hit something (empty reservoir bad!)
+            int prev_index =
+                theLaunchDim.x * theLaunchDim.y * (sysData.cur_iter) +
+                prev_coord_y * theLaunchDim.x + prev_coord_x; // TODO: how to calculate motion vector??
+
+            Reservoir *prev_frame_reservoir = &spatial_output_reservoir_buffer[prev_index];
+
+            LightSample *y2 = &prev_frame_reservoir->y;
+            if (prev_frame_reservoir->M >= current_reservoir->M){
+                prev_frame_reservoir->M = current_reservoir->M;
+            }
+
+            updateReservoir(
+                &s,
+                y2,
+                length(y2->radiance_over_pdf) * y2->pdf * prev_frame_reservoir->W * prev_frame_reservoir->M,
+                &prd.seed);
+
+            s.M = current_reservoir->M + prev_frame_reservoir->M;
+            s.W =
+                (1.0f / (length(s.y.radiance_over_pdf) * s.y.pdf)) * // 1 / p_hat
+                (1.0f / s.M) *
+                s.w_sum;
+            if (isnan(s.W) || s.M == 0.f) s.W = 0;
+
+            s.nearest_hit = current_reservoir->nearest_hit;
+            // s.y.throughput = y1->throughput;
+            // s.y.bxdf = y1->bxdf;
+            // s.y.weightMIS = y1->weightMIS;
+
+            ris_output_reservoir_buffer[lidx_ris] = s;
+        } else {
+            ris_output_reservoir_buffer[lidx_ris] = *current_reservoir;
+        }
     }
 
     // ########################
@@ -505,7 +522,6 @@ extern "C" __global__ void __raygen__path_tracer()
     ////////////////////////////////
     // shoot direct lighting ray
     ////////////////////////////////
-
     if (prd.num_ris_samples > 0 && sysData.cur_iter != sysData.spp) {
         Reservoir& final_reservoir = ris_output_reservoir_buffer[lidx_ris];
 
