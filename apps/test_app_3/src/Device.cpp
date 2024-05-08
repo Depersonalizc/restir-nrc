@@ -1950,7 +1950,8 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
     // m_systemData.oldReservoirBuffer = m_systemData.reservoirBuffer;
     // m_systemData.reservoirBuffer = temp;
     m_systemData.cur_iter = m_systemData.iterationIndex % (m_systemData.spp + 1);
-
+    m_systemData.rand_seed = rand();
+    
     if (true) // Update the whole SystemData block because more than the iterationIndex changed. This normally means a GUI interaction. Just sync.
     {
         synchronizeStream();
@@ -1975,7 +1976,6 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
     // Note the launch width per device to render in tiles.
     // std::cout << "OptixLaunch: ref = " << int32_t(m_ref_device == nullptr) << std::endl;
     OPTIX_CHECK( m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1) );
-
 
     // Compute PSNR
     if (m_compute_psnr && m_ref_device != nullptr) {

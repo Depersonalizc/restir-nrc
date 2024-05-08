@@ -76,6 +76,7 @@ struct PerRayData
   float3 wo;          // Outgoing direction, to observer, in world space.
   float3 wi;          // Incoming direction, to light, in world space.
 
+  float3 radiance_first_hit;    // Radiance along the current path segment.
   float3 radiance;    // Radiance along the current path segment.
   float  pdf;         // The last BSDF sample's pdf, tracked for multiple importance sampling.
   
@@ -91,18 +92,15 @@ struct PerRayData
 
   mi::neuraylib::Bsdf_event_type eventType; // The type of events created by BSDF importance sampling.
 
-  int depth;
-
   unsigned int seed;  // Random number generator input.
   uint2 launchDim;
   uint2 launchIndex;
   int launch_linear_index;
   bool do_reference;
-  bool do_ris_resampling;
   bool do_spatial_resampling;
   bool do_temporal_resampling;
-  bool padding;
-  
+  bool first_hit;
+
   // Small material stack tracking IOR, absorption ansd scattering coefficients of the entered materials. Entry 0 is vacuum.
   int           idxStack; 
   MaterialStack stack[MATERIAL_STACK_SIZE];

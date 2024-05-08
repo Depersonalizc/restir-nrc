@@ -215,6 +215,7 @@ Application::Application(GLFWwindow* window, const Options& options)
     m_renderingGUI.pane_b = {false, 0, false, true, false};
     m_renderingGUI.pane_c = {false, false, false, false, false};
 
+
     m_rotationEnvironment[0] = 0.0f;
     m_rotationEnvironment[1] = 0.0f;
     m_rotationEnvironment[2] = 0.0f;
@@ -390,6 +391,7 @@ Application::Application(GLFWwindow* window, const Options& options)
     createMeshLights();
 
     m_raytracer->initScene(m_scene, m_idGeometry); // m_idGeometry is the number of geometries in the scene.
+        
     m_raytracer->initLights(m_lightsGUI);          // With arbitrary mesh lights, the geometry attributes and indices can only be filled after initScene().
 
     if (options.getComputeRef()) {
@@ -554,7 +556,7 @@ bool Application::render()
       restartRendering(true);
     }
 
-    //std::cout << "iterationIndex: " << iterationIndex << ", m_spp: " << m_spp << std::endl;
+    // std::cout << "iterationIndex: " << iterationIndex << ", m_spp: " << m_spp << std::endl;
 
     // For continuous rendering (TODO: toggle with GUI option)
     // if (iterationIndex > m_spp) {

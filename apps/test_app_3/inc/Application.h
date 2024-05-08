@@ -278,8 +278,8 @@ private:
 
   // Same as above, but for ref.
 
-  static constexpr int2 m_pathLengths_ref = {16, 32};
-  static constexpr int  m_spp_ref = 32;
+  static constexpr int2 m_pathLengths_ref = {2, 16};
+  static constexpr int  m_spp_ref = 64;
   static constexpr bool m_useDirectLighting_ref = true;
 
   TypeLight m_typeEnv;                // The type of the light in m_lightsGUI[0]. Used to determine the miss shader.
