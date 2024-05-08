@@ -224,7 +224,7 @@ __forceinline__ __device__ float3 integrator(PerRayData &prd, int index)
 {
     // The integrator starts with black radiance and full path throughput.
     prd.radiance = make_float3(0.0f);
-    // prd.radiance_first_hit = make_float3(0.0f);
+    prd.radiance_first_hit = make_float3(0.0f);
     prd.pdf = 0.0f;
     prd.throughput = make_float3(1.0f);
     prd.flags = 0;
@@ -395,7 +395,6 @@ extern "C" __global__ void __raygen__path_tracer()
 
     prd.pos = ray.org;
     prd.wi = ray.dir;
-
     float3 radiance = float3({0.0, 0.0, 0.0});
 
     Reservoir *ris_output_reservoir_buffer = reinterpret_cast<Reservoir *>(sysData.RISOutputReservoirBuffer);
@@ -454,11 +453,11 @@ extern "C" __global__ void __raygen__path_tracer()
 
             if (prd.do_spatial_resampling) {
                 if (sysData.cur_iter == 0){
-                    // radiance += prd.radiance_first_hit;
+                    radiance += prd.radiance_first_hit;
                 }
             }
             else {
-                // radiance += prd.radiance_first_hit;
+                radiance += prd.radiance_first_hit;
             }
         }
     }
@@ -598,7 +597,7 @@ extern "C" __global__ void __raygen__path_tracer()
             updated_reservoir.y.throughput = current_throughput;
 
             spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
-            radiance = current_throughput * current_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
+            radiance += current_throughput * current_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
         }
     }
 
