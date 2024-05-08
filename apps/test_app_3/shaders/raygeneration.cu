@@ -416,6 +416,7 @@ extern "C" __global__ void __raygen__path_tracer()
     {
         prd.do_reference = true;
         prd.num_ris_samples = 0;
+        prd.do_ris_resampling = prd.num_ris_samples > 0;
         prd.do_temporal_resampling = false;
         prd.do_spatial_resampling = false;
     }
@@ -423,6 +424,7 @@ extern "C" __global__ void __raygen__path_tracer()
     {
         prd.do_reference = false;
         prd.num_ris_samples = pane_flags.ris_samples;
+        prd.do_ris_resampling = prd.num_ris_samples > 0;
         prd.do_temporal_resampling = pane_flags.do_temporal_reuse;
         prd.do_spatial_resampling = pane_flags.do_spatial_reuse;
     }
@@ -450,7 +452,7 @@ extern "C" __global__ void __raygen__path_tracer()
         }
         // printf("BEFORE INTEGRATION \n");
         radiance = integrator(prd, index);
-        printf("AFTER INTEGRATION, radiance = %f, do_ris_resampling = %i \n", length(radiance), prd.do_ris_resampling);
+        // printf("AFTER INTEGRATION, radiance = %f, do_ris_resampling = %i \n", length(radiance), prd.do_ris_resampling);
 
         if (prd.do_ris_resampling)
         {
@@ -470,7 +472,7 @@ extern "C" __global__ void __raygen__path_tracer()
         }
     }
 
-    printf("starting temporal...\n");
+    // printf("starting temporal...\n");
     // ########################
     //  HANDLE TEMPORAL LOGIC
     // ########################
@@ -566,7 +568,7 @@ extern "C" __global__ void __raygen__path_tracer()
             ris_output_reservoir_buffer[lidx_ris] = s;
             if (index == 131270)
             { // 93312
-                printf("PERFORMED TEMPORAL REUSE with offset %i, %i, M = %i \n", offset_x, offset_y, s.M);
+                // printf("PERFORMED TEMPORAL REUSE with offset %i, %i, M = %i \n", offset_x, offset_y, s.M);
             }
         }
 
@@ -576,7 +578,7 @@ extern "C" __global__ void __raygen__path_tracer()
         }
     }
 
-    printf("starting spatial...\n");
+    // printf("starting spatial...\n");
     // ########################
     // HANDLE SPATIAL LOGIC
     // ########################
