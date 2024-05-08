@@ -62,7 +62,7 @@ Application::Application(GLFWwindow* window, const Options& options)
 , m_presentAtSecond(1.0)
 , m_previousComplete(false)
 , m_typeLens(TYPE_LENS_PINHOLE)
-, m_spp(2)
+, m_spp(4)
 , m_epsilonFactor(500.0f)
 , m_clockFactor(1000.0f)
 , m_useDirectLighting(true)
@@ -211,9 +211,9 @@ Application::Application(GLFWwindow* window, const Options& options)
     m_referenceGUI.do_compute  = false;
 
     m_renderingGUI.num_panes = 1;
-    m_renderingGUI.pane_a = {false, true, true, false, false};
-    m_renderingGUI.pane_b = {false, true, true, true, false};
-    m_renderingGUI.pane_c = {false, false, false, false, false};
+    m_renderingGUI.pane_a = {false, 0, false, false, false};
+    m_renderingGUI.pane_b = {false, 0, false, false, false};
+    m_renderingGUI.pane_c = {false, 0, false, false, false};
 
     m_rotationEnvironment[0] = 0.0f;
     m_rotationEnvironment[1] = 0.0f;
@@ -1214,7 +1214,7 @@ void Application::guiWindow()
         if (ImGui::SliderInt("Num panes", &m_renderingGUI.num_panes, 1, 3)) {
             refresh = true;
         }
-        if (ImGui::Checkbox("RIS 1", &m_renderingGUI.pane_a.do_ris)) {
+        if (ImGui::SliderInt("RIS 1", &m_renderingGUI.pane_a.ris_samples, 0, 64)) {
             refresh = true;
         }
         if (ImGui::Checkbox("Spatial reuse 1", &m_renderingGUI.pane_a.do_spatial_reuse)) {
@@ -1223,7 +1223,9 @@ void Application::guiWindow()
         if (ImGui::Checkbox("Temporal reuse 1", &m_renderingGUI.pane_a.do_temporal_reuse)) {
             refresh = true;
         }
-        if (ImGui::Checkbox("RIS 2", &m_renderingGUI.pane_b.do_ris)) {
+
+        if (ImGui::SliderInt("RIS 2", &m_renderingGUI.pane_b.ris_samples, 0, 64)) {
+
             refresh = true;
         }
         if (ImGui::Checkbox("Spatial reuse1 2", &m_renderingGUI.pane_b.do_spatial_reuse)) {
@@ -1232,7 +1234,9 @@ void Application::guiWindow()
         if (ImGui::Checkbox("Temporal reuse1 2", &m_renderingGUI.pane_b.do_temporal_reuse)) {
             refresh = true;
         }
-        if (ImGui::Checkbox("RIS 3", &m_renderingGUI.pane_c.do_ris)) {
+
+        if (ImGui::SliderInt("RIS 3", &m_renderingGUI.pane_c.ris_samples, 0, 64)) {
+
             refresh = true;
         }
         if (ImGui::Checkbox("Spatial reuse1 3", &m_renderingGUI.pane_c.do_spatial_reuse)) {

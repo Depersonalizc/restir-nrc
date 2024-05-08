@@ -88,6 +88,8 @@ struct PerRayData
   int    walk;        // Number of random walk steps done through scattering volume.
   float3 pdfVolume;   // Volume extinction sample pdf. Used to adjust the throughput along the random walk.
 
+  int32_t num_ris_samples; // 0 == disable
+
   mi::neuraylib::Bsdf_event_type eventType; // The type of events created by BSDF importance sampling.
 
   unsigned int seed;  // Random number generator input.
@@ -99,7 +101,7 @@ struct PerRayData
   bool do_spatial_resampling;
   bool do_temporal_resampling;
   bool first_hit;
-  
+
   // Small material stack tracking IOR, absorption ansd scattering coefficients of the entered materials. Entry 0 is vacuum.
   int           idxStack; 
   MaterialStack stack[MATERIAL_STACK_SIZE];
