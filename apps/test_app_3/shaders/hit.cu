@@ -718,8 +718,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
     // IMPLEMENT RESTIR HERE!!!
     // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
-    // const int numLights = sysData.numLights;
-    const int numLights = 1;
+    const int numLights = sysData.numLights;
+    // const int numLights = 1;
 
     // printf("numLights = %d\n", numLights);
 
@@ -729,8 +729,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
     {
         // Sample one of many lights.
         // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
-        // const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
-        const int indexLight = 1;
+        const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
+        // const int indexLight = 1;
 
         // attempt to get rid of mysterious light...
         // int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * (numLights - 1))), 0, (numLights - 1) - 1) : 0;
