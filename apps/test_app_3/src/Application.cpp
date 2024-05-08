@@ -385,23 +385,13 @@ Application::Application(GLFWwindow* window, const Options& options)
 
     m_mdl_wrapper->initMaterialsMDL(m_materialsMDL, m_raytracer_ref->m_devicesActive); // The MaterialMDL structure will receive all per material reference data.
 
-    printf("Checkpoint A\n");
-
     // Only when all MDL materials have been initialized, the information about which of them contains emissions is available inside the m_materialsMDL.
     // Traverse the scene once and generate light definitions for the meshes with emissive materials.
     createMeshLights();
 
-    
-    printf("Checkpoint B\n");
-
     m_raytracer->initScene(m_scene, m_idGeometry); // m_idGeometry is the number of geometries in the scene.
-    
-    printf("Checkpoint C\n");
-    
+        
     m_raytracer->initLights(m_lightsGUI);          // With arbitrary mesh lights, the geometry attributes and indices can only be filled after initScene().
-
-
-    printf("Checkpoint D\n");
 
     if (options.getComputeRef()) {
         m_raytracer_ref->initScene(m_scene, m_idGeometry); // m_idGeometry is the number of geometries in the scene.
