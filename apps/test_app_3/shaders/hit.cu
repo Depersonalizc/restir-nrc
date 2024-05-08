@@ -866,7 +866,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
                         current_reservoir->y.throughput = throughput;
                         current_reservoir->y.bxdf = bxdf;
 
-                        thePrd->radiance_first_hit = f_q * W;
+                        thePrd->radiance = f_q * W;
+                        // thePrd->radiance_first_hit = f_q * W;
                     }
                     else
                     {

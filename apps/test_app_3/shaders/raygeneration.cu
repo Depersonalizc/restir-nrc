@@ -224,7 +224,7 @@ __forceinline__ __device__ float3 integrator(PerRayData &prd, int index)
 {
     // The integrator starts with black radiance and full path throughput.
     prd.radiance = make_float3(0.0f);
-    prd.radiance_first_hit = make_float3(0.0f);
+    // prd.radiance_first_hit = make_float3(0.0f);
     prd.pdf = 0.0f;
     prd.throughput = make_float3(1.0f);
     prd.flags = 0;
@@ -460,12 +460,12 @@ extern "C" __global__ void __raygen__path_tracer()
             {
                 if (sysData.cur_iter == 0)
                 {
-                    radiance += prd.radiance_first_hit;
+                    // radiance += prd.radiance_first_hit;
                 }
             }
             else
             {
-                radiance += prd.radiance_first_hit;
+                // radiance += prd.radiance_first_hit;
             }
         }
     }
