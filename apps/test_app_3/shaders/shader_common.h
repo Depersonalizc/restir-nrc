@@ -260,7 +260,12 @@ __forceinline__ __host__ __device__ float powerHeuristic(const float a, const fl
 
 __forceinline__ __host__ __device__ float balanceHeuristic(const float a, const float b)
 {
-  return a / (a + b);
+    return a / (a + b);
+}
+
+__forceinline__ __host__ __device__ float balanceHeuristic3(const float a, const float b, const float c)
+{
+  return a / (a + b + c);
 }
 
 __forceinline__ __device__ void alignVector(const float3& axis, float3& w)

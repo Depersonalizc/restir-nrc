@@ -814,7 +814,11 @@ void Device::initPipeline()
   pgd->kind  = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
   pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
   pgd->hitgroup.moduleCH            = modules[MODULE_ID_HIT];
-  pgd->hitgroup.entryFunctionNameCH = "__closesthit__radiance_no_emission";
+  if (m_ref_device == nullptr) {  // This is the reference
+    pgd->hitgroup.entryFunctionNameCH = "__closesthit__radiance_no_emission_ref";
+  } else {
+    pgd->hitgroup.entryFunctionNameCH = "__closesthit__radiance_no_emission_ris";
+  }
 
   pgd = &programGroupDescriptions[PGID_HIT_SHADOW_0];
   pgd->kind  = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
@@ -840,8 +844,11 @@ void Device::initPipeline()
   pgd->kind  = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
   pgd->flags = OPTIX_PROGRAM_GROUP_FLAGS_NONE;
   pgd->hitgroup.moduleCH            = modules[MODULE_ID_HIT];
-  pgd->hitgroup.entryFunctionNameCH = "__closesthit__radiance_no_emission";
-  pgd->hitgroup.moduleAH            = modules[MODULE_ID_HIT];
+  if (m_ref_device == nullptr) {  // This is the reference
+      pgd->hitgroup.entryFunctionNameCH = "__closesthit__radiance_no_emission_ref";
+  } else {
+      pgd->hitgroup.entryFunctionNameCH = "__closesthit__radiance_no_emission_ris";
+  }  pgd->hitgroup.moduleAH            = modules[MODULE_ID_HIT];
   pgd->hitgroup.entryFunctionNameAH = "__anyhit__radiance_cutout";
 
   pgd = &programGroupDescriptions[PGID_HIT_SHADOW_2];

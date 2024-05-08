@@ -365,6 +365,21 @@ extern "C" __global__ void __raygen__path_tracer()
         temp_reservoir_buffer[index] = Reservoir({0, 0, 0, 0});
     }
 
+
+    // ########################
+    // HANDLE RIS LOGIC
+    // ########################
+    if(sysData.cur_iter != sysData.spp) {
+        if (prd.num_ris_samples > 0) {
+            ris_output_reservoir_buffer[lidx_ris] = Reservoir({0, 0, 0, 0});
+        }
+        radiance = integrator(prd, index);
+        if (index == 131328) {
+            printf("cur_iter = %d radiance from RIS step = %f %f %f\n", sysData.cur_iter, radiance.x, radiance.y, radiance.z);
+        }
+        // integrator(prd, index);
+    }
+
     // ########################
     //  HANDLE TEMPORAL LOGIC
     // ########################
@@ -427,7 +442,7 @@ extern "C" __global__ void __raygen__path_tracer()
         if (index == 131328) {
             printf("s.y.f_actual = %f\t s.W = %f\n", s.y.f_actual,  s.W);
         }
-        radiance = s.y.f_actual * s.W;
+        //radiance = s.y.f_actual * s.W;
     }
 
     // ########################
@@ -487,20 +502,6 @@ extern "C" __global__ void __raygen__path_tracer()
             spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
             //radiance = y.f_actual * updated_reservoir.W;
         }
-    }
-
-    // ########################
-    // HANDLE RIS LOGIC
-    // ########################
-    if(sysData.cur_iter != sysData.spp) {
-        if (prd.num_ris_samples > 0) {
-            ris_output_reservoir_buffer[lidx_ris] = spatial_output_reservoir_buffer[lidx_spatial]; // Reservoir({0, 0, 0, 0});
-        }
-        radiance = integrator(prd, index);
-        if (index == 131328) {
-            printf("cur_iter = %d radiance from RIS step = %f %f %f\n", sysData.cur_iter, radiance.x, radiance.y, radiance.z);
-        }
-        // integrator(prd, index);
     }
 
 
