@@ -1820,12 +1820,12 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
 
     m_systemData.iterationIndex = iterationIndex;
 
-    printf("CHECKPOINT A, m_isDirtyOutputBuffer = %i !!!\n", m_isDirtyOutputBuffer);
+    // printf("CHECKPOINT A, m_isDirtyOutputBuffer = %i !!!\n", m_isDirtyOutputBuffer);
 
     if (m_isDirtyOutputBuffer)
     {
         MY_ASSERT(buffer != nullptr);
-    printf("CHECKPOINT B, buffer = 0x%llx !!!\n", buffer);
+    // printf("CHECKPOINT B, buffer = 0x%llx !!!\n", buffer);
         if (*buffer == nullptr) // The buffer is nullptr for the device which should allocate the full resolution buffers. This device is called first!
         {
             // Only allocate the host buffer once, not per each device.
@@ -1974,7 +1974,7 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
     synchronizeStream();
 
     // Compute PSNR
-    if (false && m_compute_psnr && m_ref_device != nullptr) {
+    if (m_compute_psnr && m_ref_device != nullptr) {
         uint32_t num_pixels = m_systemData.resolution.x * m_systemData.resolution.y;
         uint32_t blockDimX = 512;
         uint32_t gridDimX  = div_up(num_pixels, blockDimX);

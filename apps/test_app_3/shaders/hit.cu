@@ -740,24 +740,16 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         LightSample lightSample = optixDirectCall<LightSample, const LightDefinition &, PerRayData *>(NUM_LENS_TYPES + light.typeLight, light, thePrd);
 
         Reservoir *current_reservoir;
-        if (do_ris)
-        {
+        if (do_ris){
             int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
             int lidx = thePrd->launch_linear_index;
             Reservoir *ris_output_reservoir_buffer = reinterpret_cast<Reservoir *>(sysData.RISOutputReservoirBuffer);
             Reservoir *temp_buffer = reinterpret_cast<Reservoir *>(sysData.TempReservoirBuffer);
 
-            if (tidx == 131328)
-            {
-                printf("num_lights = %d\tlight_idx = %d\tlight type = %d\n", numLights, indexLight, sysData.lightDefinitions[indexLight].typeLight);
-            }
-
-            if (sysData.first_frame || !thePrd->do_temporal_resampling)
-            {
+            if (sysData.first_frame || !thePrd->do_temporal_resampling){
                 current_reservoir = &ris_output_reservoir_buffer[lidx];
             }
-            else
-            {
+            else{
                 temp_buffer[tidx] = Reservoir({0, 0, 0, 0});
                 current_reservoir = &temp_buffer[tidx];
             }
@@ -766,8 +758,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             int M = 32;
 
             // generate candidates (X_1, ..., X_M)
-            for (int i = 0; i < M; i++)
-            {
+            for (int i = 0; i < M; i++){
                 LightSample X_i = optixDirectCall<LightSample, const LightDefinition &, PerRayData *>(NUM_LENS_TYPES + light.typeLight, light, thePrd);
 
                 float m_i = 1.0f / M;
@@ -796,19 +787,15 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             lightSample = y;
         }
 
-        if (0.0f < lightSample.pdf && 0 <= idxCallScatteringEval)
-        {
+        if (0.0f < lightSample.pdf && 0 <= idxCallScatteringEval){
             mi::neuraylib::Bsdf_evaluate_data<mi::neuraylib::DF_HSM_NONE> eval_data;
 
             int idx = thePrd->idxStack;
 
-            if (isFrontFace || thin_walled)
-            {
+            if(isFrontFace || thin_walled) {
                 eval_data.ior1 = thePrd->stack[idx].ior;
                 eval_data.ior2 = ior;
-            }
-            else
-            {
+            } else {
                 idx = max(0, idx - 1);
 
                 eval_data.ior1 = ior;
@@ -824,20 +811,13 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             // For a white Lambert material, the bxdf components match the eval_data.pdf
             const float3 bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
 
-            if (0.0f < eval_data.pdf && isNotNull(bxdf))
-            {
+            if (0.0f < eval_data.pdf && isNotNull(bxdf)) {
                 // Pass the current payload registers through to the shadow ray.
                 unsigned int p0 = optixGetPayload_0();
                 unsigned int p1 = optixGetPayload_1();
 
                 thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
 
-                int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                if (tidx == 131328)
-                {
-                    printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
-                           thePrd->pos.x, thePrd->pos.y, thePrd->pos.z, lightSample.direction.x, lightSample.direction.y, lightSample.direction.z);
-                }
                 // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
                 // to prevent self-intersections with the actual light geometry in the scene.
                 optixTrace(sysData.topObject,
@@ -846,81 +826,51 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
                            OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT,            // The shadow ray type only uses anyhit programs.
                            TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
                            p0, p1); // Pass through thePrd to the shadow ray.
-
-                if ((thePrd->flags & FLAG_SHADOW) == 0) // Visibility test failed
-                {
+                
+                // Visibility test failed
+                if ((thePrd->flags & FLAG_SHADOW) == 0) {
                     const float weightMIS = (TYPE_LIGHT_POINT <= light.typeLight /*|| do_ris*/) ? 1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
 
                     // The sampled emission needs to be scaled by the inverse probability to have selected this light,
                     // Selecting one of many lights means the inverse of 1.0f / numLights.
                     // This is using the path throughput before the sampling modulated it above.
-                    if (do_ris)
-                    {
+                    if (do_ris) {
                         float W = current_reservoir->W;
                         float3 f_q =
                             lightSample.pdf * lightSample.radiance_over_pdf *
                             throughput * bxdf * (float(numLights) * weightMIS);
 
-                        current_reservoir->y.f_actual = f_q;
-                        current_reservoir->y.throughput_bxdf = throughput * bxdf;
                         current_reservoir->y.throughput = throughput;
                         current_reservoir->y.bxdf = bxdf;
 
                         thePrd->radiance = f_q * W;
                         // thePrd->radiance_first_hit = f_q * W;
-                    }
-                    else
-                    {
+                    } else {
                         thePrd->radiance += throughput * bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
                     }
                 }
-                else
-                {
-                    if (do_ris)
-                    {
+                else {
+                    if (do_ris) {
                         int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
                         if (tidx == 131328)
                         {
-                            printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
+                            // printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
                         }
-                        *current_reservoir = zero_reservoir;
+                        // *current_reservoir = zero_reservoir;
+                        current_reservoir->W = 0.f;
                     }
                 }
-            }
-            else
-            {
-                if (do_ris)
-                {
+            } else {
+                if (do_ris) {
                     int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                    if (tidx == 131328)
-                    {
-                        printf("Zeroing out reservoir due to eval_data.pdf = %f\tisNotNull(bxdf) = %d\n", eval_data.pdf, isNotNull(bxdf));
+                    if (tidx == 131328) {
+                        // printf("Zeroing out reservoir due to eval_data.pdf = %f\tisNotNull(bxdf) = %d\n", eval_data.pdf, isNotNull(bxdf));
                     }
-                    *current_reservoir = zero_reservoir;
+                    // *current_reservoir = zero_reservoir;
+                    current_reservoir->W = 0.f;
                 }
             }
         }
-    }
-
-    int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-    if (tidx == 131328 && do_ris)
-    {
-        Reservoir *current_reservoir;
-
-        int lidx = thePrd->launch_linear_index;
-        Reservoir *ris_output_reservoir_buffer = reinterpret_cast<Reservoir *>(sysData.RISOutputReservoirBuffer);
-        Reservoir *temp_buffer = reinterpret_cast<Reservoir *>(sysData.TempReservoirBuffer);
-
-        if (sysData.first_frame || !thePrd->do_temporal_resampling)
-        {
-            current_reservoir = &ris_output_reservoir_buffer[lidx];
-        }
-        else
-        {
-            current_reservoir = &temp_buffer[tidx];
-        }
-
-        printf(" about to leave hit: reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
     }
 
     // Now after everything has been handled using the current material stack,
