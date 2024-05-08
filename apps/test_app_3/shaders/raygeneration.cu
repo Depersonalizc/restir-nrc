@@ -246,8 +246,7 @@ __forceinline__ __device__ float3 integrator(PerRayData &prd, int index)
     int depth = 0; // Path segment index. Primary ray is depth == 0.
     prd.first_hit = true;
 
-    while (depth < 1)
-    //   while (depth < sysData.pathLengths.y)
+    while (depth < sysData.pathLengths.y)
     {
         // if (index == 0) {
         //     printf("depth = %d\tsysData.pathLengths = %d, %d\tSPP = %d\n",
@@ -416,7 +415,6 @@ extern "C" __global__ void __raygen__path_tracer()
     {
         prd.do_reference = true;
         prd.num_ris_samples = 0;
-        prd.do_ris_resampling = prd.num_ris_samples > 0;
         prd.do_temporal_resampling = false;
         prd.do_spatial_resampling = false;
     }
@@ -424,11 +422,11 @@ extern "C" __global__ void __raygen__path_tracer()
     {
         prd.do_reference = false;
         prd.num_ris_samples = pane_flags.ris_samples;
-        prd.do_ris_resampling = prd.num_ris_samples > 0;
         prd.do_temporal_resampling = pane_flags.do_temporal_reuse;
         prd.do_spatial_resampling = pane_flags.do_spatial_reuse;
     }
 
+    bool do_ris = prd.num_ris_samples > 0;
     // printf("CHECK GUARDS: do_ref = %i, do_ris = %i, do_temporal = %i, do_spatial = %i\n", prd.do_reference, prd.num_ris_samples, prd.do_temporal_resampling, prd.do_spatial_resampling);
 
     prd.launch_linear_index = lidx_ris;
@@ -446,15 +444,15 @@ extern "C" __global__ void __raygen__path_tracer()
     // ########################
     if (sysData.cur_iter != sysData.spp)
     {
-        if (prd.do_ris_resampling)
+        if (do_ris)
         {
             ris_output_reservoir_buffer[lidx_ris] = Reservoir({0, 0, 0, 0});
         }
         // printf("BEFORE INTEGRATION \n");
         radiance = integrator(prd, index);
-        // printf("AFTER INTEGRATION, radiance = %f, do_ris_resampling = %i \n", length(radiance), prd.do_ris_resampling);
+        // printf("AFTER INTEGRATION, radiance = %f, do_ris_resampling = %i \n", length(radiance), do_ris);
 
-        if (prd.do_ris_resampling)
+        if (do_ris)
         {
             nearest_hit_current = ris_output_reservoir_buffer[lidx_ris].nearest_hit;
 

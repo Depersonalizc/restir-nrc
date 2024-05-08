@@ -1820,16 +1820,12 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
 
     m_systemData.iterationIndex = iterationIndex;
 
-    printf("CHECKPOINT A, m_isDirtyOutputBuffer = %i !!!\n", m_isDirtyOutputBuffer);
-
     if (m_isDirtyOutputBuffer)
     {
         MY_ASSERT(buffer != nullptr);
-    printf("CHECKPOINT B, buffer = 0x%llx !!!\n", buffer);
         if (*buffer == nullptr) // The buffer is nullptr for the device which should allocate the full resolution buffers. This device is called first!
         {
             // Only allocate the host buffer once, not per each device.
-    printf("CHECKPOINT C, m_ref_device = 0x%llx !!!\n", m_ref_device);
             m_bufferHost.resize(m_systemData.resolution.x * m_systemData.resolution.y);
 
             // Note that this requires that all other devices have finished accessing this buffer, but that is automatically the case
@@ -1841,7 +1837,6 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
             m_systemData.outputBuffer = memAlloc(sizeof(Half4) * m_systemData.resolution.x * m_systemData.resolution.y, sizeof(Half4));
 #endif
             if (m_ref_device != nullptr) {
-                  printf("CHECKPOINT D !!!\n");
                 // Allocate reservoirs only for non-ref renderers
                 size_t reservior_size = align_up<size_t>(sizeof(Reservoir), 32);
                 size_t indiv_rsv_size = reservior_size * m_systemData.resolution.x * m_systemData.resolution.y;
@@ -1971,10 +1966,8 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
     // std::cout << "OptixLaunch: ref = " << int32_t(m_ref_device == nullptr) << std::endl;
     OPTIX_CHECK( m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1) );
 
-    synchronizeStream();
-
     // Compute PSNR
-    if (false && m_compute_psnr && m_ref_device != nullptr) {
+    if (m_compute_psnr && m_ref_device != nullptr) {
         uint32_t num_pixels = m_systemData.resolution.x * m_systemData.resolution.y;
         uint32_t blockDimX = 512;
         uint32_t gridDimX  = div_up(num_pixels, blockDimX);
