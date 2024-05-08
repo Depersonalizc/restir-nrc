@@ -246,7 +246,8 @@ __forceinline__ __device__ float3 integrator(PerRayData &prd, int index)
     int depth = 0; // Path segment index. Primary ray is depth == 0.
     prd.first_hit = true;
 
-    while (depth < sysData.pathLengths.y)
+    // while (depth < sysData.pathLengths.y)
+    while(depth < 1)
     {
         // if (index == 0) {
         //     printf("depth = %d\tsysData.pathLengths = %d, %d\tSPP = %d\n",
@@ -441,17 +442,14 @@ extern "C" __global__ void __raygen__path_tracer()
     // ########################
     // HANDLE RIS LOGIC
     // ########################
-    if (sysData.cur_iter != sysData.spp)
-    {
-        if (do_ris)
-        {
+    if (sysData.cur_iter != sysData.spp) {
+        if (do_ris) {
             ris_output_reservoir_buffer[lidx_ris] = Reservoir({0, 0, 0, 0});
         }
         radiance = integrator(prd, index);
         // printf("AFTER INTEGRATION, radiance = %f, do_ris_resampling = %i \n", length(radiance), do_ris);
 
-        if (do_ris)
-        {
+        if (do_ris) {
             nearest_hit_current = ris_output_reservoir_buffer[lidx_ris].nearest_hit;
 
             if (prd.do_spatial_resampling) {
