@@ -246,8 +246,8 @@ __forceinline__ __device__ float3 integrator(PerRayData &prd, int index)
     int depth = 0; // Path segment index. Primary ray is depth == 0.
     prd.first_hit = true;
 
-    // while (depth < sysData.pathLengths.y)
-    while(depth < 1)
+    while (depth < sysData.pathLengths.y)
+    // while(depth < 1)
     {
         // if (index == 0) {
         //     printf("depth = %d\tsysData.pathLengths = %d, %d\tSPP = %d\n",
