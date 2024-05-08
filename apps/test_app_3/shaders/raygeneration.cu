@@ -311,7 +311,7 @@ extern "C" __global__ void __raygen__path_tracer()
     PerRayData prd;
     
     // Initialize the random number generator seed from the linear pixel index and the iteration index.
-    prd.seed = tea<4>(theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
+    prd.seed = tea<4>(theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x, sysData.iterationIndex + sysData.rand_seed); // PERF This template really generates a lot of instructions.
     prd.launchDim = theLaunchDim;
     prd.launchIndex = theLaunchIndex;
     prd.depth = 0;
@@ -380,20 +380,10 @@ extern "C" __global__ void __raygen__path_tracer()
     //  HANDLE TEMPORAL LOGIC
     // ########################
     if (prd.do_temporal_resampling && !sysData.first_frame && sysData.cur_iter != sysData.spp){
-        if (index == 131328) {
-            // printf("running temporal reuse: %d\t sysData.cur_iter = %d\n", prd.do_spatial_resampling,  sysData.cur_iter);
-        }
         Reservoir s = Reservoir({0, 0, 0, 0});
 
         Reservoir* current_reservoir = &temp_reservoir_buffer[index]; // choose current reservoir
-        //Reservoir* current_reservoir = &ris_output_reservoir_buffer[lidx_ris]; // choose current reservoir
-
-        if (index == 131328) {
-            // printf("curr reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-        }
-
         LightSample* y1 = &current_reservoir->y;
-
         updateReservoir(
             &s,
             y1,
@@ -408,9 +398,6 @@ extern "C" __global__ void __raygen__path_tracer()
             theLaunchIndex.y * theLaunchDim.x + theLaunchIndex.x; // TODO: how to calculate motion vector??
         Reservoir* prev_frame_reservoir = &spatial_output_reservoir_buffer[prev_index];
         LightSample* y2 = &prev_frame_reservoir->y;
-        if (index == 131328) {
-            // printf("prev frame reservoir w_sum = %f\tW = %f\tM = %d\n", prev_frame_reservoir->w_sum, prev_frame_reservoir->W, prev_frame_reservoir->M);
-        }
         if (prev_frame_reservoir->M >= current_reservoir->M){
             prev_frame_reservoir->M = current_reservoir->M;
         }
@@ -420,7 +407,7 @@ extern "C" __global__ void __raygen__path_tracer()
             y2,
             length(y2->radiance_over_pdf) * y2->pdf * prev_frame_reservoir->W * prev_frame_reservoir->M,
             &prd.seed
-            );
+        );
 
         s.M = current_reservoir->M + prev_frame_reservoir->M;
         s.W =
@@ -428,10 +415,6 @@ extern "C" __global__ void __raygen__path_tracer()
             (1.0f / s.M) *
             s.w_sum;
         if(isnan(s.W) || s.M == 0.f){ s.W = 0; }
-
-        if (index == 131328) {
-            // printf("temporal reservoir final w_sum = %f\tW = %f\tM = %d\n", s.w_sum, s.W, s.M);
-        }
 
         ris_output_reservoir_buffer[lidx_ris] = s;
     }
@@ -483,9 +466,10 @@ extern "C" __global__ void __raygen__path_tracer()
             LightSample y = updated_reservoir.y;
             updated_reservoir.M = total_M;
             updated_reservoir.W =
-                (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *  // 1 / p_hat
+                (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *
                 (1.0f / updated_reservoir.M) *
                 updated_reservoir.w_sum;
+            if(isnan(updated_reservoir.W) || isinf(updated_reservoir.W)) updated_reservoir.W = 0;
 
             updated_reservoir.nearest_hit = nearest_hit_current;
             updated_reservoir.y.bxdf = current_bxdf;
@@ -495,8 +479,6 @@ extern "C" __global__ void __raygen__path_tracer()
             radiance += current_throughput * current_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
         }
     }
-
-
 
 #if USE_DEBUG_EXCEPTIONS
     // DEBUG Highlight numerical errors.
