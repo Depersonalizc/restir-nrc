@@ -1091,6 +1091,7 @@ void Device::initLights(const std::vector<LightGUI>& lightsGUI, const std::vecto
     m_lights.resize(numLights);
   }
 
+  float total_light_area = 0.f;
   for (int i = 0; i < numLights; ++i)
   {
     const LightGUI&  lightGUI = lightsGUI[i]; // LightGUI data on the host.
@@ -1124,6 +1125,8 @@ void Device::initLights(const std::vector<LightGUI>& lightsGUI, const std::vecto
     light.invIntegral     = 1.0f;
     light.spotAngleHalf   = dp::math::degToRad(lightGUI.spotAngle * 0.5f);
     light.spotExponent    = lightGUI.spotExponent;
+
+    total_light_area += light.area;
 
     if (!lightGUI.nameEmission.empty())
     {
@@ -1174,6 +1177,7 @@ void Device::initLights(const std::vector<LightGUI>& lightsGUI, const std::vecto
 
   CU_CHECK( cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_systemData.lightDefinitions), m_lights.data(), sizeof(LightDefinition) * numLights, m_cudaStream) );
   m_systemData.numLights = numLights;
+  m_systemData.total_light_area = total_light_area;
 
   m_isDirtySystemData = true; // Trigger full update of the device system data on the next launch.
 }

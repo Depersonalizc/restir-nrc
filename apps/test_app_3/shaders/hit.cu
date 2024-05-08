@@ -524,6 +524,11 @@ extern "C" __global__ void __closesthit__radiance()
 //   thePrd->radiance = rng3(thePrd->seed);
 // }
 
+
+__forceinline__ __device__ float lum(float4 rgba) {
+    return (0.299f * rgba.x + 0.587f * rgba.y + 0.114f * rgba.z);
+}
+
 // PERF Identical to radiance shader above, but used for materials without emission, which is the majority of materials.
 extern "C" __global__ void __closesthit__radiance_no_emission()
 {
@@ -720,8 +725,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
   // IMPLEMENT RESTIR HERE!!!
   // Direct lighting if the sampled BSDF was diffuse and any light is in the scene.
-  // const int numLights = sysData.numLights;
-  const int numLights = 1;
+  const int numLights = sysData.numLights;
 
   // printf("numLights = %d\n", numLights);
 
@@ -731,8 +735,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
   {
     // Sample one of many lights.
     // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
-      // const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
-    const int indexLight = 1;
+    const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
 
     // attempt to get rid of mysterious light...
     // int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * (numLights - 1))), 0, (numLights - 1) - 1) : 0;
@@ -765,21 +768,36 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
 
         // generate candidates (X_1, ..., X_M)
         for(int i = 0; i < M; i++) {
+            const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
+            const LightDefinition& light = sysData.lightDefinitions[indexLight];
+
+            if (tidx == 131328) {
+                printf("inside hit: sampling from light %d, area %f\n",
+                       indexLight, light.area);
+            }
+
             LightSample X_i = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light.typeLight, light, thePrd);
 
-            float p_hat = length(X_i.radiance_over_pdf) * X_i.pdf;
+            float pdf   = X_i.pdf * light.area;
+            float p_hat = length(X_i.radiance_over_pdf) * pdf;
+
+            if (tidx == 131328) {
+                printf("inside hit: generating light sample X_i.radiance_over_pdf = %f\tX_i.pdf = %f\n",
+                       length(X_i.radiance_over_pdf), X_i.pdf);
+            }
 
             float lerp_scale = sum_p_hat;
             float m_i;
             sum_p_hat += p_hat;
-            if (sum_p_hat == 0) {
-              lerp_scale = 0;
-              m_i = 0;
-            } else {
-              lerp_scale /= sum_p_hat;
-              m_i = p_hat / sum_p_hat;
 
+            if (sum_p_hat == 0) {
+                lerp_scale = 0;
+                m_i = 0;
+            } else {
+                lerp_scale /= sum_p_hat;
+                m_i = p_hat / sum_p_hat;
             }
+
             current_reservoir->W *= lerp_scale;
             current_reservoir->w_sum *= lerp_scale;
 
@@ -792,8 +810,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             float w_i = m_i * length(X_i.radiance_over_pdf); // p_hat * W_X;
 
             if (tidx == 131328) {
-                printf("inside hit: generating light sample X_i.radiance_over_pdf = %f\tX_i.pdf = %f\n",
-                       length(X_i.radiance_over_pdf), X_i.pdf);
                 printf("inside hit: reservoir before update w_sum = %f\tW = %f\tM = %d\n",
                        current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
             }
@@ -895,7 +911,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
             float W = current_reservoir->W;
             float3 f_q = 
               lightSample.pdf * lightSample.radiance_over_pdf *
-              throughput * bxdf * (float(numLights) * weightMIS);
+              throughput * bxdf * (weightMIS);
 
             current_reservoir->y.f_actual = f_q;
 

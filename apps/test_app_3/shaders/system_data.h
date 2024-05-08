@@ -111,6 +111,8 @@ struct SystemData
 
   float sceneEpsilon;
   float clockScale; // Only used with USE_TIME_VIEW.
+  float total_light_area;
+
 
   int typeLens;     // Camera type.
 
