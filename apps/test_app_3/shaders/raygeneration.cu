@@ -500,7 +500,7 @@ extern "C" __global__ void __raygen__path_tracer()
             prev_coord_no_hit = false;
         }
 
-        bool prev_too_far = sqrt((double)(offset_x * offset_x + offset_y * offset_y)) > 30.f;
+        bool prev_too_far = sqrt((double)(offset_x * offset_x + offset_y * offset_y)) > 5.f;
 
         if (!prev_coord_offscreen && !prev_coord_no_hit && !prev_too_far) {
             // select previous frame's reservoir and combine it
