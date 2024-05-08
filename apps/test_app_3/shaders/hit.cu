@@ -1296,16 +1296,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                     *current_reservoir = zero_reservoir;
                 }
             }
-
-            const int idx = min(thePrd->idxStack + 1, MATERIAL_STACK_LAST); // Push current medium parameters.
-
-            thePrd->idxStack = idx;
-            thePrd->stack[idx].ior = ior;
-            thePrd->stack[idx].sigma_a = absorption;
-            thePrd->stack[idx].sigma_s = scattering;
-            thePrd->stack[idx].bias = bias;
-
-            thePrd->sigma_t = absorption + scattering; // Update the current extinction coefficient.
         }
     }
 

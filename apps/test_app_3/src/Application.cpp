@@ -211,10 +211,10 @@ Application::Application(GLFWwindow* window, const Options& options)
     m_referenceGUI.do_compute  = false;
 
     m_renderingGUI.num_panes = 1;
-    m_renderingGUI.pane_a = {false, 1, false, false, false};
-    m_renderingGUI.pane_b = {false, 0, false, true, false};
-    m_renderingGUI.pane_c = {false, false, false, false, false};
 
+    m_renderingGUI.pane_a = {false, 0, false, false, false};
+    m_renderingGUI.pane_b = {false, 0, false, false, false};
+    m_renderingGUI.pane_c = {false, 0, false, false, false};
 
     m_rotationEnvironment[0] = 0.0f;
     m_rotationEnvironment[1] = 0.0f;
