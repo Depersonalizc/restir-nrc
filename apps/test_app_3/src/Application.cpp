@@ -558,10 +558,10 @@ bool Application::render()
     // std::cout << "iterationIndex: " << iterationIndex << ", m_spp: " << m_spp << std::endl;
 
     // For continuous rendering (TODO: toggle with GUI option)
-    // if (iterationIndex > m_spp) {
-    //     restartRendering(false);
-    //     m_raytracer->m_iterationIndex = 0;
-    // }
+    if (iterationIndex > m_spp) {
+        restartRendering(false);
+        m_raytracer->m_iterationIndex = 0;
+    }
 
     // When the renderer has completed all iterations, change the GUI title bar to green.
     // const bool complete = ((unsigned int) m_spp + 1 <= iterationIndex);

@@ -246,8 +246,8 @@ __forceinline__ __device__ float3 integrator(PerRayData &prd, int index)
     int depth = 0; // Path segment index. Primary ray is depth == 0.
     prd.first_hit = true;
 
-    while (depth < sysData.pathLengths.y)
-    // while(depth < 1)
+    // while (depth < sysData.pathLengths.y)
+    while(depth < 1)
     {
         // if (index == 0) {
         //     printf("depth = %d\tsysData.pathLengths = %d, %d\tSPP = %d\n",
@@ -598,6 +598,11 @@ extern "C" __global__ void __raygen__path_tracer()
             updated_reservoir.y.bxdf = current_bxdf;
             updated_reservoir.y.throughput = current_throughput;
             updated_reservoir.y.weightMIS = current_weightMIS;
+
+            // float new_distance = y.distance;
+            // float new_light_area = 0;
+            // float new_eval_data_cos = dot(y.direction, );
+            // float new_pdf = 0;
 
             spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
             radiance += current_throughput * current_bxdf * 

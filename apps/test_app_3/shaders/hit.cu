@@ -732,9 +732,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
         // const int indexLight = 1;
 
-        // attempt to get rid of mysterious light...
-        // int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * (numLights - 1))), 0, (numLights - 1) - 1) : 0;
-        // indexLight += 1;
+        float total_area = 0;
+        for(int i = 0; i < numLights; i++){
+            total_area += sysData.lightDefinitions[i].area;
+        }
 
         const LightDefinition &light = sysData.lightDefinitions[indexLight];
         LightSample lightSample = optixDirectCall<LightSample, const LightDefinition &, PerRayData *>(NUM_LENS_TYPES + light.typeLight, light, thePrd);
@@ -829,7 +830,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
                 
                 // Visibility test failed
                 if ((thePrd->flags & FLAG_SHADOW) == 0) {
-                    const float weightMIS = (TYPE_LIGHT_POINT <= light.typeLight /*|| do_ris*/) ? 1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
+                    const float weightMIS = (TYPE_LIGHT_POINT <= light.typeLight) ? 
+                        1.0f : 
+                        // balanceHeuristic(lightSample.pdf, eval_data.pdf) *
+                        balanceHeuristic(lightSample.pdf, light.area / total_area);
 
                     // The sampled emission needs to be scaled by the inverse probability to have selected this light,
                     // Selecting one of many lights means the inverse of 1.0f / numLights.
