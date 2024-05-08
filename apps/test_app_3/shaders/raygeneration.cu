@@ -376,7 +376,6 @@ extern "C" __global__ void __raygen__path_tracer()
         radiance = integrator(prd, index);
     }
 
-
     // ########################
     //  HANDLE TEMPORAL LOGIC
     // ########################
@@ -493,7 +492,7 @@ extern "C" __global__ void __raygen__path_tracer()
             updated_reservoir.y.throughput = current_throughput;
 
             spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
-            radiance = current_throughput * current_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
+            radiance += current_throughput * current_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
         }
     }
 

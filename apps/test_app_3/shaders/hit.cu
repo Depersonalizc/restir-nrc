@@ -763,25 +763,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         for(int i = 0; i < M; i++) {
             LightSample X_i = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light.typeLight, light, thePrd);
 
-            // float p_hat = length(X_i.radiance_over_pdf) * X_i.pdf;
-
-            // float lerp_scale = sum_p_hat;
-            // float m_i;
-            // sum_p_hat += p_hat;
-            // if (sum_p_hat == 0) {
-            //   lerp_scale = 0;
-            //   m_i = 0;
-            // } else {
-            //   lerp_scale /= sum_p_hat;
-            //   m_i = p_hat / sum_p_hat;
-
-            // }
-            // current_reservoir->W *= lerp_scale;
-            // current_reservoir->w_sum *= lerp_scale;
-
-            // float w_i = m_i * length(X_i.radiance_over_pdf);
-
-
             float m_i = 1.0f / M;
             float W_X = 1.0f / X_i.pdf;
             if(X_i.pdf == 0.f) W_X = 1.0f / (1.0f / M);
@@ -800,7 +781,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         current_reservoir->W =
             (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *  // 1 / p_hat
             current_reservoir->w_sum;                         // w_sum
-
         if (isnan(current_reservoir->W) || isinf(current_reservoir->W)) current_reservoir->W = 0;
 
         current_reservoir->nearest_hit = thePrd->pos;
@@ -882,20 +862,12 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
         }
         else {
             if(do_ris) {
-                int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                if (tidx == 131328) {
-                    // printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
-                }
-                *current_reservoir = zero_reservoir;
+                current_reservoir->W = 0.f;
             }
         }
       } else {
           if(do_ris) {
-              int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-              if (tidx == 131328) {
-                //   printf("Zeroing out reservoir due to eval_data.pdf = %f\tisNotNull(bxdf) = %d\n", eval_data.pdf, isNotNull(bxdf));
-              }
-              *current_reservoir = zero_reservoir;
+            current_reservoir->W = 0.f;
           }
       }
     }
