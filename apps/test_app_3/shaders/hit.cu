@@ -1052,7 +1052,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
         // indexLight += 1;
 
         LightDefinition* light;
-        LightSample lightSample;
+        LightSample  lightSample_non_ris;
+        LightSample* lightSample;
 
         Reservoir* current_reservoir;
         if (do_ris) {
@@ -1083,10 +1084,9 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                 }
 
                 LightSample X_i = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + lght.typeLight, lght, thePrd);
-
-                //float pdf   = balanceHeuristic(X_i.pdf, lght.area/sysData.total_light_area);
-                //float pdf   = X_i.pdf * light.area;
-                float pdf   = X_i.pdf;
+                float pdf   = balanceHeuristic(X_i.pdf, lght.area/sysData.total_light_area);
+                //float pdf   = X_i.pdf * lght.area;
+                //float pdf   = X_i.pdf;
 
                 if (0.0f < pdf && 0 <= idxCallScatteringEval)
                 {
@@ -1108,13 +1108,13 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                     }
 
                     eval_data.k1 = thePrd->wo;
-                    eval_data.k2 = lightSample.direction;
+                    eval_data.k2 = X_i.direction;
 
                     optixDirectCall<void>(idxCallScatteringEval, &eval_data, &state, &res_data, material.arg_block);
                     //pdf = X_i.pdf;
-                    // pdf = (TYPE_LIGHT_POINT <= lght.typeLight) ?
-                    //           pdf : balanceHeuristic(X_i.pdf, eval_data.pdf);
-                    pdf = balanceHeuristic3(X_i.pdf, lght.area/sysData.total_light_area, eval_data.pdf);
+                    pdf = (TYPE_LIGHT_POINT <= lght.typeLight) ?
+                              pdf : balanceHeuristic(X_i.pdf, eval_data.pdf);
+                    // pdf = balanceHeuristic3(X_i.pdf, lght.area/sysData.total_light_area, eval_data.pdf);
                 } else {
                     continue;
                 }
@@ -1166,9 +1166,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
             }
 
             // calculate W and select better candidate y
-            LightSample y = current_reservoir->y;
+            lightSample = &current_reservoir->y;
 
             if (tidx == 131328) {
+                LightSample& y = *lightSample;
                 printf("inside hit: updated light sample y.radiance_over_pdf = %f\ty.pdf = %f\tdirection = %f,%f,%f, dist = %f\n",
                        length(y.radiance_over_pdf), y.pdf, y.direction.x, y.direction.y, y.direction.z, y.distance);
                 printf("inside hit: reservoir w_sum = %f\tW = %f\tM = %d\n",
@@ -1176,7 +1177,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
             }
 
             current_reservoir->W =
-                (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *  // 1 / p_hat
+                (1.0f / (length(lightSample->radiance_over_pdf) * lightSample->pdf)) *  // 1 / p_hat
                 current_reservoir->w_sum;                         // w_sum
 
             if (tidx == 131328) {
@@ -1186,7 +1187,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
             if (isnan(current_reservoir->W) || isinf(current_reservoir->W)) current_reservoir->W = 0;
 
             current_reservoir->nearest_hit = thePrd->pos;
-            lightSample = y;
         } else {
             // not RIS
 
@@ -1195,11 +1195,12 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
             const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 1, numLights - 1) : 0;
 
             light = &sysData.lightDefinitions[indexLight];
-            lightSample = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light->typeLight, *light, thePrd);
+            lightSample_non_ris = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light->typeLight, *light, thePrd);
+            lightSample = &lightSample_non_ris;
 
         }
 
-        if (0.0f < lightSample.pdf && 0 <= idxCallScatteringEval)
+        if (0.0f < lightSample->pdf && 0 <= idxCallScatteringEval)
         {
             mi::neuraylib::Bsdf_evaluate_data<mi::neuraylib::DF_HSM_NONE> eval_data;
 
@@ -1219,7 +1220,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
             }
 
             eval_data.k1 = thePrd->wo;
-            eval_data.k2 = lightSample.direction;
+            eval_data.k2 = lightSample->direction;
 
             optixDirectCall<void>(idxCallScatteringEval, &eval_data, &state, &res_data, material.arg_block);
 
@@ -1227,66 +1228,70 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
             // For a white Lambert material, the bxdf components match the eval_data.pdf
             const float3 bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
 
+            if (do_ris) {
+                current_reservoir->throughput_x_bxdf = throughput * bxdf;
+            }
+
             if (0.0f < eval_data.pdf && isNotNull(bxdf))
             {
                 // Pass the current payload registers through to the shadow ray.
-                unsigned int p0 = optixGetPayload_0();
-                unsigned int p1 = optixGetPayload_1();
+                // unsigned int p0 = optixGetPayload_0();
+                // unsigned int p1 = optixGetPayload_1();
 
-                thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
+                // thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
 
-                int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                if (tidx == 131328) {
-                    printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
-                           thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lightSample.direction.x, lightSample.direction.y, lightSample.direction.z);
-                }
+                // int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
+                // if (tidx == 131328) {
+                //     printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
+                //            thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lightSample.direction.x, lightSample.direction.y, lightSample.direction.z);
+                // }
                 // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
                 // to prevent self-intersections with the actual light geometry in the scene.
-                optixTrace(sysData.topObject,
-                           thePrd->pos, lightSample.direction, // origin, direction
-                           sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
-                           OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
-                           TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
-                           p0, p1); // Pass through thePrd to the shadow ray.
+                // optixTrace(sysData.topObject,
+                //            thePrd->pos, lightSample.direction, // origin, direction
+                //            sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
+                //            OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
+                //            TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
+                //            p0, p1); // Pass through thePrd to the shadow ray.
 
-                if ((thePrd->flags & FLAG_SHADOW) == 0) // Visibility test failed
-                {
-                    if(do_ris){
-                        float W = current_reservoir->W;
-                        float3 f_q =
-                            lightSample.pdf * lightSample.radiance_over_pdf *
-                            throughput * bxdf;
+                // if ((thePrd->flags & FLAG_SHADOW) == 0) // Visibility test failed
+                // {
+                //     if(do_ris){
+                //         float W = current_reservoir->W;
+                //         float3 f_q =
+                //             lightSample.pdf * lightSample.radiance_over_pdf *
+                //             throughput * bxdf;
 
-                        current_reservoir->y.f_actual = f_q;
+                //         current_reservoir->y.f_actual = f_q;
 
-                        int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                        if (tidx == 131328) {
-                            printf("Point NOT in shadow: reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-                        }
-                        thePrd->radiance += f_q * W;
+                //         int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
+                //         if (tidx == 131328) {
+                //             printf("Point NOT in shadow: reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
+                //         }
+                //         thePrd->radiance += f_q * W;
 
-                    } else {
-                        const float weightMIS = (TYPE_LIGHT_POINT <= light->typeLight) ?
-                                                    1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
+                //     } else {
+                //         const float weightMIS = (TYPE_LIGHT_POINT <= light->typeLight) ?
+                //                                     1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
 
-                        // The sampled emission needs to be scaled by the inverse probability to have selected this light,
-                        // Selecting one of many lights means the inverse of 1.0f / numLights.
-                        // This is using the path throughput before the sampling modulated it above.
-                        if (tidx == 131328) {
-                            printf("Point NOT in shadow\n");
-                        }
-                        thePrd->radiance += throughput * bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
-                    }
-                }
-                else {
-                    if(do_ris) {
-                        int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                        if (tidx == 131328) {
-                            printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
-                        }
-                        *current_reservoir = zero_reservoir;
-                    }
-                }
+                //         // The sampled emission needs to be scaled by the inverse probability to have selected this light,
+                //         // Selecting one of many lights means the inverse of 1.0f / numLights.
+                //         // This is using the path throughput before the sampling modulated it above.
+                //         if (tidx == 131328) {
+                //             printf("Point NOT in shadow\n");
+                //         }
+                //         thePrd->radiance += throughput * bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
+                //     }
+                // }
+                // else {
+                //     if(do_ris) {
+                //         int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
+                //         if (tidx == 131328) {
+                //             printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
+                //         }
+                //         *current_reservoir = zero_reservoir;
+                //     }
+                // }
             } else {
                 if(do_ris) {
                     int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;

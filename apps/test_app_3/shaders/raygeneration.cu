@@ -439,9 +439,6 @@ extern "C" __global__ void __raygen__path_tracer()
 
         ris_output_reservoir_buffer[lidx_ris] = s;
 
-        if (index == 131328) {
-            printf("s.y.f_actual = %f\t s.W = %f\n", s.y.f_actual,  s.W);
-        }
         //radiance = s.y.f_actual * s.W;
     }
 
@@ -452,7 +449,7 @@ extern "C" __global__ void __raygen__path_tracer()
         if (index == 131328) {
             printf("running spatial reuse: %d\t sysData.cur_iter = %d\n", prd.do_spatial_resampling,  sysData.cur_iter);
         }
-        Reservoir updated_reservoir = ris_output_reservoir_buffer[lidx_spatial];
+        Reservoir& updated_reservoir = ris_output_reservoir_buffer[lidx_ris];
         if (index == 131328) {
             printf("spatial reservoir TEST INTIIAL VALUE = %f\tW = %f\tM = %d\n", updated_reservoir.w_sum, updated_reservoir.W, updated_reservoir.M);
         }
@@ -504,6 +501,57 @@ extern "C" __global__ void __raygen__path_tracer()
         }
     }
 
+
+    ////////////////////////////////
+    // shoot direct lighting ray
+    ////////////////////////////////
+
+    if (prd.num_ris_samples > 0 && sysData.cur_iter != sysData.spp) {
+        Reservoir& final_reservoir = ris_output_reservoir_buffer[lidx_ris];
+
+        if (final_reservoir.M > 0 && length(final_reservoir.throughput_x_bxdf) > 0) {
+
+            LightSample& lightSample = final_reservoir.y;
+            // Pass the current payload registers through to the shadow ray.
+            uint2 payload = splitPointer(&prd);
+
+            prd.flags &= ~FLAG_SHADOW;                  // Clear the shadow flag.
+
+            int tidx = prd.launchIndex.y * prd.launchDim.x + prd.launchIndex.x;
+            if (tidx == 131328) {
+                printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
+                       prd.pos.x,prd.pos.y,prd.pos.z, lightSample.direction.x, lightSample.direction.y, lightSample.direction.z);
+            }
+            // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
+            // to prevent self-intersections with the actual light geometry in the scene.
+            optixTrace(sysData.topObject,
+                       final_reservoir.nearest_hit, lightSample.direction, // origin, direction
+                       sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
+                       OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
+                       TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
+                       payload.x, payload.y); // Pass through thePrd to the shadow ray.
+
+            if ((prd.flags & FLAG_SHADOW) == 0) // Visibility test succeeded
+            {
+                float W = final_reservoir.W;
+                float3 f_q =
+                    lightSample.pdf * lightSample.radiance_over_pdf *
+                    final_reservoir.throughput_x_bxdf;
+
+                int tidx = prd.launchIndex.y * prd.launchDim.x + prd.launchIndex.x;
+                if (tidx == 131328) {
+                    printf("Point NOT in shadow: reservoir w_sum = %f\tW = %f\tM = %d\n", final_reservoir.w_sum, final_reservoir.W, final_reservoir.M);
+                }
+                radiance += f_q * W / 10;
+            } else {
+                int tidx = prd.launchIndex.y * prd.launchDim.x + prd.launchIndex.x;
+                if (tidx == 131328) {
+                    printf("Zeroing out reservoir due to (prd.flags & FLAG_SHADOW) == 0 being false\n");
+                }
+                final_reservoir = zero_reservoir;
+            }
+         }
+     }
 
 #if USE_DEBUG_EXCEPTIONS
     // DEBUG Highlight numerical errors.
