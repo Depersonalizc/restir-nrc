@@ -532,6 +532,7 @@ extern "C" __global__ void __raygen__path_tracer()
             s.nearest_hit = current_reservoir->nearest_hit;
             // s.y.throughput = y1->throughput;
             // s.y.bxdf = y1->bxdf;
+            // s.y.weightMIS = y1->weightMIS;
 
             ris_output_reservoir_buffer[lidx_ris] = s;
         } else {
@@ -547,6 +548,7 @@ extern "C" __global__ void __raygen__path_tracer()
         float3 nearest_hit_current = updated_reservoir.nearest_hit;
         float3 current_throughput = updated_reservoir.y.throughput;
         float3 current_bxdf = updated_reservoir.y.bxdf;
+        float current_weightMIS = updated_reservoir.y.weightMIS;
 
         if (updated_reservoir.W != 0){
             int k = 5;
@@ -595,9 +597,15 @@ extern "C" __global__ void __raygen__path_tracer()
 
             updated_reservoir.y.bxdf = current_bxdf;
             updated_reservoir.y.throughput = current_throughput;
+            updated_reservoir.y.weightMIS = current_weightMIS;
 
             spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
-            radiance += current_throughput * current_bxdf * y.radiance_over_pdf * y.pdf * updated_reservoir.W * sysData.numLights;
+            radiance += current_throughput * current_bxdf * 
+                y.radiance_over_pdf * y.pdf * // issue with using this pdf...
+                updated_reservoir.W * sysData.numLights * current_weightMIS;
+            // radiance += prd.radiance_first_hit;
+        } else {
+            radiance += prd.radiance_first_hit;
         }
     }
 

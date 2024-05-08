@@ -840,6 +840,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
                             lightSample.pdf * lightSample.radiance_over_pdf *
                             throughput * bxdf * (float(numLights) * weightMIS);
 
+                        current_reservoir->y.weightMIS = weightMIS;
                         current_reservoir->y.throughput = throughput;
                         current_reservoir->y.bxdf = bxdf;
 
