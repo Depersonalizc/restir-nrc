@@ -1653,7 +1653,8 @@ void Device::createInstance(const GeometryData& geometryData, const InstanceData
   if (indexShader < 0 || static_cast<int>(m_deviceShaderConfigurations.size()) < indexShader)
   {
     std::cerr << "ERROR: createInstance() indexShader " << indexShader << " is invalid. Instance ignored!\n";
-    MY_ASSERT(!"createInstance() indexShader invalid.");
+    std::cerr << "failed to load " << idMaterial << "\n";
+    // MY_ASSERT(!"createInstance() indexShader invalid.");
     return;
   }
 

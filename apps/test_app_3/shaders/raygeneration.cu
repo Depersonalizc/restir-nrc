@@ -549,14 +549,18 @@ extern "C" __global__ void __raygen__path_tracer()
         float3 current_throughput = updated_reservoir.y.throughput;
         float3 current_bxdf = updated_reservoir.y.bxdf;
         float current_weightMIS = updated_reservoir.y.weightMIS;
+        float3 current_normal = updated_reservoir.y.normal;
 
         if (updated_reservoir.W != 0){
             int k = 5;
             int radius = 30;
             int num_k_sampled = 0;
             int total_M = updated_reservoir.M;
+            int attempts = 0;
+            int max_attempts = 20;
 
-            while (num_k_sampled < k){
+            while (num_k_sampled < k && attempts < max_attempts){
+                attempts += 1;
                 float2 sample = (rng2(prd.seed) - 0.5f) * radius * 2.0f;
                 float squared_dist = sample.x * sample.x + sample.y * sample.y;
                 if (squared_dist > radius * radius)
@@ -576,6 +580,10 @@ extern "C" __global__ void __raygen__path_tracer()
                     _y * theLaunchDim.x + _x;
                 Reservoir *neighbor_reservoir = &ris_output_reservoir_buffer[neighbor_index];
                 LightSample *y = &neighbor_reservoir->y;
+
+                float3 neighbor_normal = y->normal;
+                bool normals_too_different = dot(normalize(current_normal), normalize(neighbor_normal)) < 0.95;
+                if(normals_too_different) continue;
 
                 updateReservoir(
                     &updated_reservoir,
@@ -599,16 +607,10 @@ extern "C" __global__ void __raygen__path_tracer()
             updated_reservoir.y.throughput = current_throughput;
             updated_reservoir.y.weightMIS = current_weightMIS;
 
-            // float new_distance = y.distance;
-            // float new_light_area = 0;
-            // float new_eval_data_cos = dot(y.direction, );
-            // float new_pdf = 0;
-
             spatial_output_reservoir_buffer[lidx_spatial] = updated_reservoir;
             radiance += current_throughput * current_bxdf * 
                 y.radiance_over_pdf * y.pdf * // issue with using this pdf...
                 updated_reservoir.W * sysData.numLights * current_weightMIS;
-            // radiance += prd.radiance_first_hit;
         } else {
             radiance += prd.radiance_first_hit;
         }

@@ -847,6 +847,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
                         current_reservoir->y.weightMIS = weightMIS;
                         current_reservoir->y.throughput = throughput;
                         current_reservoir->y.bxdf = bxdf;
+                        current_reservoir->y.normal = ns;
 
                         // thePrd->radiance = f_q * W;
                         thePrd->radiance_first_hit += f_q * W;
@@ -856,22 +857,11 @@ extern "C" __global__ void __closesthit__radiance_no_emission()
                 }
                 else {
                     if (do_ris) {
-                        int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                        if (tidx == 131328)
-                        {
-                            // printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
-                        }
-                        // *current_reservoir = zero_reservoir;
                         current_reservoir->W = 0.f;
                     }
                 }
             } else {
                 if (do_ris) {
-                    int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                    if (tidx == 131328) {
-                        // printf("Zeroing out reservoir due to eval_data.pdf = %f\tisNotNull(bxdf) = %d\n", eval_data.pdf, isNotNull(bxdf));
-                    }
-                    // *current_reservoir = zero_reservoir;
                     current_reservoir->W = 0.f;
                 }
             }

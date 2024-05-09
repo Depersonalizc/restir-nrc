@@ -98,6 +98,7 @@ struct LightSample // In world space coordinates.
     float weightMIS;
     float3 throughput;
     float3 bxdf;
+    float3 normal;
 };
 
 struct Reservoir
