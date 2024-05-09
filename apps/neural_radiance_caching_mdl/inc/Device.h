@@ -445,6 +445,8 @@ public:
 	void createInstance(const GeometryData& geometryData, const InstanceData& data, const float matrix[12]);
 	void createTLAS();
 	void createGeometryInstanceData(const std::vector<GeometryData>& geometryData, const unsigned int stride, const unsigned int index);
+	
+	void initAABB(float3 minBounds, float3 maxBounds);
 
 	void updateCamera(const int idCamera, const CameraDefinition& camera);
 	void updateLight(const int idLight, const LightGUI& lightsGUI);
@@ -599,6 +601,8 @@ public:
 		.sceneEpsilon   = 500.0f * SCENE_EPSILON_SCALE,
 		.clockScale     = 1000.0f * CLOCK_FACTOR_SCALE,
 		.directLighting = 1,
+		.AABBScale = 0.0,
+
 
 		// Per-frame Data ==========
 		.pf = {

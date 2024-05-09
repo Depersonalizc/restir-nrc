@@ -1,7 +1,3 @@
-BASELINE_PATH_PREFIX = "baseline_"
-NRC_PATH_PREFIX      = "nrc_output_"
-IMAGE_EXTENSION      = ".png"
-
 import cv2
 import numpy as np
 import sys
@@ -9,6 +5,10 @@ import argparse
 import os
 from flip_loss import compute_ldrflip, color_space_transform
 import torch
+
+BASELINE_PATH_PREFIX = "baseline_"
+NRC_PATH_PREFIX      = "nrc_output_"
+IMAGE_EXTENSION      = ".png"
 
 image_to_luminance = lambda image: np.dot(image[..., :3], [0.2989, 0.5870, 0.1140])
 

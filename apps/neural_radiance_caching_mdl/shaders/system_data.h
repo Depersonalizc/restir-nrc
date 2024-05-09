@@ -121,6 +121,8 @@ struct SystemData
 	int numBitsShaders; // The number of bits needed to represent the number of elements in shaderConfigurations. Used as coherence hint in SER.
 
 	int directLighting;
+
+	float AABBScale;
 	
 	// Padding to 16-byte alignment
 	//int pad0;

@@ -1996,6 +1996,11 @@ void Device::createGeometryInstanceData(const std::vector<GeometryData>& geometr
 	m_systemData.geometryInstanceData = m_d_geometryInstanceData;
 }
 
+void Device::initAABB(float3 minBounds, float3 maxBounds) {
+	float3 bds = maxBounds - minBounds;
+	m_systemData.AABBScale = std::max(std::max(bds.x, bds.y), bds.z) * 0.5;
+}
+
 
 // Given an OpenGL UUID find the matching CUDA device.
 bool Device::matchUUID(const char* uuid)
@@ -2268,7 +2273,7 @@ void Device::render(const unsigned int iterationIndex,
 		m_nrcNetwork.infer(flatten(queries), flatten(results), numQueries);
 
 // DEBUG: Inspect inferred radiance
-#if 0
+#if 1
 		std::vector<nrc::RadianceQuery> queries_h(numQueries);
 		std::vector<float3> results_h(numQueries);
 

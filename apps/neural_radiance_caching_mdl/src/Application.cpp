@@ -360,10 +360,14 @@ Application::Application(GLFWwindow* window, const Options& options)
 
 		// Only when all MDL materials have been initialized, the information about which of them contains emissions is available inside the m_materialsMDL.
 		// Traverse the scene once and generate light definitions for the meshes with emissive materials.
+		
+		// initialize bounding box
 		this->AABBMinBounds = float3(FLT_MAX, FLT_MAX, FLT_MAX);
-		this->AABBMaxBounds = float3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+		this->AABBMaxBounds = float3(-FLT_MAX, -FLT_MAX, -FLT_MAX); // use -FLT_MAX because FLT_MIN is the minimum precision, i.e. 0.000...
 
 		createMeshLights();
+		
+		m_raytracer->initAABB(this->AABBMinBounds, this->AABBMaxBounds);
 
 		m_raytracer->initScene(m_scene, m_idGeometry); // m_idGeometry is the number of geometries in the scene.
 		m_raytracer->initLights(m_lightsGUI);          // With arbitrary mesh lights, the geometry attributes and indices can only be filled after initScene().

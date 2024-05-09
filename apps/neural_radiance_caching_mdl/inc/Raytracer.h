@@ -89,6 +89,8 @@ public:
 	void initScene(std::shared_ptr<sg::Group> root, const unsigned int numGeometries);
 	void initState(const DeviceState& state);
 
+	void initAABB(float3 minBounds, float3 maxBounds);
+
 	// Update functions should be replaced with NOP functions in a derived batch renderer because the device functions are fully asynchronous then.
 	void updateCamera(const int idCamera, const CameraDefinition& camera);
 	void updateLight(const int idLight, const LightGUI& lightGUI);

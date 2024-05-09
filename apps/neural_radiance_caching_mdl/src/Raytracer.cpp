@@ -685,6 +685,34 @@ void Raytracer::initScene(std::shared_ptr<sg::Group> root, const unsigned int nu
   }
 }
 
+void Raytracer::initAABB(float3 minBounds, float3 maxBounds) {
+    const bool allowSharingGas = ((m_peerToPeer & P2P_GAS) != 0); // GAS and vertex attribute sharing (GAS sharing is very expensive).
+
+    if (allowSharingGas)
+    {
+        const unsigned int numIslands = static_cast<unsigned int>(m_islands.size());
+
+        for (unsigned int indexIsland = 0; indexIsland < numIslands; ++indexIsland)
+        {
+            const auto& island = m_islands[indexIsland]; // Vector of device indices.
+
+            for (auto device : island) // Device index in this island.
+            {
+                m_devicesActive[device]->initAABB(minBounds, maxBounds);
+            }
+        }
+    }
+    else
+    {
+        const unsigned int numDevices = static_cast<unsigned int>(m_devicesActive.size());
+
+        for (unsigned int device = 0; device < numDevices; ++device)
+        {
+            m_devicesActive[device]->initAABB(minBounds, maxBounds);
+        }
+    }
+}
+
 
 void Raytracer::initState(const DeviceState& state)
 {
