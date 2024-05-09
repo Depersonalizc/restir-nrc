@@ -380,25 +380,27 @@ extern "C" __global__ void __raygen__path_tracer()
     //  HANDLE TEMPORAL LOGIC
     // ########################
     if (prd.do_temporal_resampling && !sysData.first_frame && sysData.cur_iter != sysData.spp) {
-        Reservoir s = Reservoir({0, 0, 0, 0});
-
         Reservoir &current_pixel_prev_reservoir = temp_reservoir_buffer[lidx_ris]; // get current pixel's previous reservoir
         Reservoir &current_reservoir = ris_output_reservoir_buffer[lidx_ris];        // choose current reservoir
         LightSample& y1 = current_reservoir.y;
 
         if (index == 131328) {
             printf("\nrunning temporal reuse: sysData.cur_iter = %d\n", sysData.cur_iter);
-            printf("RIS reservoir initial w_sum= %f\tW = %f\tM = %d\n", current_reservoir.w_sum, current_reservoir.W, current_reservoir.M);
-            printf("Prev reservoir w_sum= %f\tW = %f\tM = %d\n",
+            printf("Cur pixel prev temp reservoir w_sum= %f\tW = %f\tM = %d\n",
                    current_pixel_prev_reservoir.w_sum, current_pixel_prev_reservoir.W, current_pixel_prev_reservoir.M);
+            printf("CUR RIS reservoir initial w_sum= %f\tW = %f\tM = %d\n", current_reservoir.w_sum, current_reservoir.W, current_reservoir.M);
+            printf("\tCUR direction = %f,%f,%f\n", y1.direction.x, y1.direction.y, y1.direction.z);
+            //printf("\tCUR light pdf = %f\tphat = %f\n", y1.pdf, length(y1.radiance_over_pdf));
+            printf("\tCUR length(final_reservoir.throughput_x_bxdf) = %f\n", length(current_reservoir.throughput_x_bxdf));
+
         }
 
-        updateReservoir(
-            &s,
-            &y1,
-            length(y1.radiance_over_pdf) * y1.pdf * current_reservoir.W * current_reservoir.M,
-            &prd.seed
-        );
+        // updateReservoir(
+        //     &s,
+        //     &y1,
+        //     length(y1.radiance_over_pdf) * y1.pdf * current_reservoir.W * current_reservoir.M,
+        //     &prd.seed
+        // );
         int2 current_pixel_prev_coord = pixel_from_world_coord(screen, ray, current_pixel_prev_reservoir.nearest_hit);
         int2 current_pixel_curr_coord = pixel_from_world_coord(screen, ray, current_reservoir.nearest_hit);
         int offset_x = theLaunchIndex.x - current_pixel_prev_coord.x;
@@ -407,7 +409,7 @@ extern "C" __global__ void __raygen__path_tracer()
         if (index == 131328) {
             printf("current_pixel_prev_coord %d, %d\ncurrent_pixel_curr_coord %d, %d\n",
                    current_pixel_prev_coord.x, current_pixel_prev_coord.y, current_pixel_curr_coord.x, current_pixel_curr_coord.y);
-            printf("theLaunchIndex %d, %d\nn",
+            printf("theLaunchIndex %d, %d\n",
                    theLaunchIndex.x, theLaunchIndex.y);
             printf("offset = %d %d\n", offset_x, offset_y);
         }
@@ -430,7 +432,7 @@ extern "C" __global__ void __raygen__path_tracer()
             prev_coord_did_hit = false;
         }
 
-        bool prev_too_far = sqrt((double)(offset_x * offset_x + offset_y * offset_y)) > 5.0;
+        bool prev_too_far = sqrt((double)(offset_x * offset_x + offset_y * offset_y)) > 10.0;
 
         if (!prev_coord_offscreen && prev_coord_did_hit && !prev_too_far) {
             // select previous frame's reservoir and combine it
@@ -440,48 +442,56 @@ extern "C" __global__ void __raygen__path_tracer()
                 prev_coord_y * theLaunchDim.x + prev_coord_x; // TODO: how to calculate motion vector??
 
             Reservoir& prev_frame_reservoir = temp_reservoir_buffer[prev_index];
+            LightSample& y2 = prev_frame_reservoir.y;
+
 
             if (index == 131328) {
                 printf("Prev frame reservoir initial w_sum= %f\tW = %f\tM = %d\n",
                        prev_frame_reservoir.w_sum, prev_frame_reservoir.W, prev_frame_reservoir.M);
+                printf("PREV FRAME: idx %d reservoir w_sum = %f\tW = %f\tM = %d\n", prev_index, prev_frame_reservoir.w_sum, prev_frame_reservoir.W, prev_frame_reservoir.M);
+                printf("\tPREV direction = %f,%f,%f\n", y2.direction.x, y2.direction.y, y2.direction.z);
+                //printf("\tPREV light pdf = %f\tphat = %f\n", y2.pdf, length(y2.radiance_over_pdf));
+                printf("\tPREV length(final_reservoir.throughput_x_bxdf) = %f\n", length(prev_frame_reservoir.throughput_x_bxdf));
             }
 
-            LightSample& y2 = prev_frame_reservoir.y;
-            if (prev_frame_reservoir.M >= current_reservoir.M){
-                prev_frame_reservoir.M = current_reservoir.M;
-            }
+            // if (prev_frame_reservoir.M >= current_reservoir.M){
+            //     prev_frame_reservoir.M = current_reservoir.M;
+            // }
 
-            updateReservoir(
-                &s,
-                &y2,
-                length(y2.radiance_over_pdf) * y2.pdf * prev_frame_reservoir.W * prev_frame_reservoir.M,
-                &prd.seed);
+            float prv_phat = length(y2.radiance_over_pdf) * y2.pdf;
+            float cur_phat = length(y1.radiance_over_pdf) * y1.pdf;
+
+            float dist_between_hits = length(prev_frame_reservoir.nearest_hit - current_reservoir.nearest_hit);
+            float wght_due_to_dist  = 1.f / (dist_between_hits + 1.f);
+
+            float m_prev = balanceHeuristic(prev_frame_reservoir.M * prv_phat, current_reservoir.M * cur_phat) * wght_due_to_dist;
+            if (prev_frame_reservoir.W > 0) {
+                updateReservoir(
+                    &current_reservoir,
+                    &y2,
+                    length(y2.radiance_over_pdf) * y2.pdf * prev_frame_reservoir.W * m_prev,
+                    &prd.seed
+                );
+            }
 
             if (index == 131328) {
                 printf("Temporal reuse after combination w_sum= %f\tW = %f\tM = %d\n\n",
-                       s.w_sum, s.W, s.M);
+                       current_reservoir.w_sum, current_reservoir.W, current_reservoir.M);
             }
-            s.M = current_reservoir.M + prev_frame_reservoir.M;
-            s.W =
-                (1.0f / (length(s.y.radiance_over_pdf) * s.y.pdf)) * // 1 / p_hat
-                (1.0f / s.M) *
-                s.w_sum;
-            if (isnan(s.W) || s.M == 0.f) s.W = 0;
+            current_reservoir.M = min(current_reservoir.M + prev_frame_reservoir.M, 40);
+            current_reservoir.W =
+                (1.0f / (length(y1.radiance_over_pdf) * y1.pdf)) * // 1 / p_hat
+                current_reservoir.w_sum;
 
-            s.nearest_hit = current_reservoir.nearest_hit;
-            // s.y.throughput = y1->throughput;
-            // s.y.bxdf = y1->bxdf;
-            // s.y.weightMIS = y1->weightMIS;
+            if (isnan(current_reservoir.W) || current_reservoir.M == 0.f) clear_reservoir(current_reservoir);
 
             if (index == 131328) {
                 printf("Temporal reuse end result w_sum= %f\tW = %f\tM = %d\n\n",
-                       s.w_sum, s.W, s.M);
+                       current_reservoir.w_sum, current_reservoir.W, current_reservoir.M);
             }
-            ris_output_reservoir_buffer[lidx_ris] = s;
-        } else {
-            ris_output_reservoir_buffer[lidx_ris] = current_reservoir;
         }
     }
+
 
     // ########################
     // HANDLE SPATIAL LOGIC
@@ -502,7 +512,7 @@ extern "C" __global__ void __raygen__path_tracer()
             }
 
             int k = 5;
-            int radius = 20;
+            int radius = 30;
             int num_k_sampled = 0;
             int total_M = updated_reservoir.M;
 
@@ -536,6 +546,7 @@ extern "C" __global__ void __raygen__path_tracer()
                 float cur_phat = length(updated_reservoir.y.radiance_over_pdf) * updated_reservoir.y.pdf;
 
                 float m_neighbor = balanceHeuristic(neighbor_reservoir->M * nbr_phat, updated_reservoir.M * cur_phat);
+
                 if (neighbor_reservoir->W > 0) {
                     updateReservoir(
                         &updated_reservoir,
@@ -552,6 +563,8 @@ extern "C" __global__ void __raygen__path_tracer()
             updated_reservoir.W =
                 (1.0f / (length(y.radiance_over_pdf) * y.pdf)) * // 1 / p_hat
                 updated_reservoir.w_sum;
+
+            if (isnan(updated_reservoir.W) || updated_reservoir.M == 0.f) clear_reservoir(updated_reservoir);
 
             // Keep a copy of the updated reservoir for the next-frame's temporal reuse
             spatial_output_reservoir_buffer[lidx_ris] = updated_reservoir;
@@ -619,7 +632,7 @@ extern "C" __global__ void __raygen__path_tracer()
         }
     }
 
-    if (prd.do_temporal_resampling && sysData.cur_iter != 0) {
+    if (prd.num_ris_samples > 0 && sysData.cur_iter != 0) {
         // Forward data to the next frame
         temp_reservoir_buffer[lidx_prev] = ris_output_reservoir_buffer[lidx_prev];
     }
