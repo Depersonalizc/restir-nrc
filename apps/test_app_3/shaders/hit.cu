@@ -1260,7 +1260,6 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
             // algorithm 2 from course notes
             int M = thePrd->num_ris_samples;
-            float sum_p_hat = 0.f;
 
             // generate candidates (X_1, ..., X_M)
             for (int i = 0; i < M; i++) {
@@ -1273,8 +1272,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                 // }
 
                 LightSample X_i = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + lght.typeLight, lght, thePrd);
-                float pdf   = balanceHeuristic(X_i.pdf, lght.area/sysData.total_light_area);
-                //float pdf   = X_i.pdf * lght.area;
+                //float pdf   = balanceHeuristic(X_i.pdf, lght.area/sysData.total_light_area);
+                float pdf   = X_i.pdf * lght.area/sysData.total_light_area;
                 //float pdf   = X_i.pdf;
 
                 if (0.0f < pdf && 0 <= idxCallScatteringEval)
@@ -1329,26 +1328,13 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                 //            length(X_i.radiance_over_pdf), X_i.pdf);
                 // }
 
-                float lerp_scale = sum_p_hat;
                 float m_i;
-                sum_p_hat += p_hat;
 
-                if (sum_p_hat == 0) {
-                    lerp_scale = 0;
+                if (p_hat == 0) {
                     m_i = 0;
                 } else {
-                    lerp_scale /= sum_p_hat;
-                    m_i = p_hat / sum_p_hat;
+                    m_i = balanceHeuristic(p_hat, current_reservoir->M * current_reservoir->w_sum);
                 }
-
-                current_reservoir->W *= lerp_scale;
-                current_reservoir->w_sum *= lerp_scale;
-
-                // float W_X = 1.0f / X_i.pdf;
-                // if(X_i.pdf == 0.f) W_X = 1.0f / (1.0f / M);
-
-                // float p_hat = length(X_i.radiance_over_pdf) * X_i.pdf;
-                // if (isnan(p_hat)) p_hat = 0.f;
 
                 float w_i = m_i * length(X_i.radiance_over_pdf); // p_hat * W_X;
 
@@ -1682,7 +1668,6 @@ extern "C" __global__ void __anyhit__shadow()
 
 extern "C" __global__ void __anyhit__shadow_cutout() // For the radiance ray type.
 {
-    printf("in anyhhit_shadow_cutout\n");
   const GeometryInstanceData theData = sysData.geometryInstanceData[optixGetInstanceId()];
 
   const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();

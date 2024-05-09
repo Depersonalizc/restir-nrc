@@ -119,14 +119,14 @@ __forceinline__ __device__ void clear_reservoir(Reservoir& rsv) { // but keep ne
     rsv.W = 0;
 }
 
-//static constexpr Reservoir zero_reservoir = {0,0,0,0};
+static constexpr Reservoir zero_reservoir = {0,0,0,0};
 
 // reservoir update
-__forceinline__ __device__ void updateReservoir(Reservoir* r, LightSample* x_i, float w_i, unsigned int* seed)
+__forceinline__ __device__ void updateReservoir(Reservoir* r, LightSample* x_i, float w_i, unsigned int* seed, uint32_t M=1)
 {
     r->w_sum += w_i;
-    //r->M = min(r->M + 1, 20);
-    r->M += 1;
+    //r->M = min(r->M + M, 40);
+    r->M += M;
 
     // float3 test_rad = x_i->radiance_over_pdf;
     // if(test_rad.x == test_rad.y && test_rad.x == test_rad.z){
