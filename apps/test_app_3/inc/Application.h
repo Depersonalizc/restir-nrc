@@ -191,7 +191,7 @@ private:
   //TypeEDF  determineTypeEDF(const std::string& token) const;
   bool loadSceneDescription(const std::string& filename);
 
-  void restartRendering(bool recompute_ref);
+  void restartRendering(bool recompute_ref, bool reset_restir_buffers=false);
 
   bool screenshot(const bool tonemap, bool reference);
 

@@ -1060,14 +1060,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
             int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
             int lidx = thePrd->launch_linear_index;
             Reservoir* ris_output_reservoir_buffer = reinterpret_cast<Reservoir*>(sysData.RISOutputReservoirBuffer);
-            Reservoir* temp_buffer = reinterpret_cast<Reservoir*>(sysData.TempReservoirBuffer);
 
-            if (sysData.first_frame || !thePrd->do_temporal_resampling) {
-                current_reservoir = &ris_output_reservoir_buffer[lidx];
-            } else {
-                temp_buffer[tidx] = Reservoir({0, 0, 0, 0});
-                current_reservoir = &temp_buffer[tidx];
-            }
+            current_reservoir = &ris_output_reservoir_buffer[lidx];
 
             // algorithm 2 from course notes
             int M = thePrd->num_ris_samples;
@@ -1078,10 +1072,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                 const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 1, numLights - 1) : 0;
                 const LightDefinition& lght = sysData.lightDefinitions[indexLight];
 
-                if (tidx == 131328) {
-                    printf("inside hit: sampling from light %d, area %f\n",
-                           indexLight, lght.area);
-                }
+                // if (tidx == 131328) {
+                //     printf("inside hit: sampling from light %d, area %f\n",
+                //            indexLight, lght.area);
+                // }
 
                 LightSample X_i = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + lght.typeLight, lght, thePrd);
                 float pdf   = balanceHeuristic(X_i.pdf, lght.area/sysData.total_light_area);
@@ -1125,10 +1119,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
                 X_i.pdf = pdf;
 
-                if (tidx == 131328) {
-                    printf("inside hit: generating light sample X_i.radiance_over_pdf = %f\tX_i.pdf = %f\n",
-                           length(X_i.radiance_over_pdf), X_i.pdf);
-                }
+                // if (tidx == 131328) {
+                //     printf("inside hit: generating light sample X_i.radiance_over_pdf = %f\tX_i.pdf = %f\n",
+                //            length(X_i.radiance_over_pdf), X_i.pdf);
+                // }
 
                 float lerp_scale = sum_p_hat;
                 float m_i;
@@ -1153,16 +1147,16 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
                 float w_i = m_i * length(X_i.radiance_over_pdf); // p_hat * W_X;
 
-                if (tidx == 131328) {
-                    printf("inside hit: reservoir before update w_sum = %f\tW = %f\tM = %d\n",
-                           current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-                }
+                // if (tidx == 131328) {
+                //     printf("inside hit: reservoir before update w_sum = %f\tW = %f\tM = %d\n",
+                //            current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
+                // }
                 updateReservoir(current_reservoir, &X_i, w_i, &thePrd->seed);
 
-                if (tidx == 131328) {
-                    printf("inside hit: reservoir after update w_sum = %f\tW = %f\tM = %d\n",
-                           current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-                }
+                // if (tidx == 131328) {
+                //     printf("inside hit: reservoir after update w_sum = %f\tW = %f\tM = %d\n",
+                //            current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
+                // }
             }
 
             // calculate W and select better candidate y
@@ -1298,7 +1292,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                     if (tidx == 131328) {
                         printf("Zeroing out reservoir due to eval_data.pdf = %f\tisNotNull(bxdf) = %d\n", eval_data.pdf, isNotNull(bxdf));
                     }
-                    *current_reservoir = zero_reservoir;
+                    clear_reservoir(*current_reservoir);
                 }
             }
         }
@@ -1311,13 +1305,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
         int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
         int lidx = thePrd->launch_linear_index;
         Reservoir* ris_output_reservoir_buffer = reinterpret_cast<Reservoir*>(sysData.RISOutputReservoirBuffer);
-        Reservoir* temp_buffer = reinterpret_cast<Reservoir*>(sysData.TempReservoirBuffer);
-        if (sysData.first_frame || !thePrd->do_temporal_resampling) {
-            current_reservoir = &ris_output_reservoir_buffer[lidx];
-        } else {
-            temp_buffer[tidx] = Reservoir({0, 0, 0, 0});
-            current_reservoir = &temp_buffer[tidx];
-        }
+        current_reservoir = &ris_output_reservoir_buffer[lidx];
+
         printf(" about to leave hit: reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
     }
 

@@ -106,7 +106,14 @@ struct Reservoir
   float3  throughput_x_bxdf;
 };
 
-static constexpr Reservoir zero_reservoir = {0,0,0,0};
+__forceinline__ __device__ void clear_reservoir(Reservoir& rsv) { // but keep nearest hit and throughput
+    rsv.y = {0};
+    rsv.w_sum = 0;
+    rsv.M = 0;
+    rsv.W = 0;
+}
+
+//static constexpr Reservoir zero_reservoir = {0,0,0,0};
 
 // reservoir update
 __forceinline__ __device__ void updateReservoir(Reservoir* r, LightSample* x_i, float w_i, unsigned int* seed)

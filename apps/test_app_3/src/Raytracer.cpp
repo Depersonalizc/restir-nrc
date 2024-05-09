@@ -513,6 +513,14 @@ void Raytracer::selectDevices()
     }
 }
 
+void Raytracer::clearRestirBuffers() {
+    for (size_t i = 0; i < m_devicesActive.size(); ++i) {
+        std::cout << "Clearing restir buffers from device " << i << std::endl;
+        m_devicesActive[i]->clearRestirBuffers();
+    }
+    m_iterationIndex = 0; // Restart accumulation.
+}
+
 #if 1
 // This implementation does not consider the actually free amount of VRAM on the individual devices in an island, but assumes they are equally loaded.
 // This method works more fine grained with the arena allocator.

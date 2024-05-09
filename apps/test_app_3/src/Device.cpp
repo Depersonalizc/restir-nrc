@@ -232,6 +232,15 @@ static std::vector<char> readData(std::string const& filename)
   return data;
 }
 
+template<typename T>
+inline T align_up(T num, T align) {
+    return ((num - 1) / align + 1) * align;
+}
+
+template<typename T>
+inline T div_up(T num, T align) {
+    return ((num - 1) / align + 1);
+}
 
 Device::Device(const int ordinal,
                const int index,
@@ -1375,6 +1384,10 @@ void Device::updateRenderingOptions(int32_t num_panes, const PaneFlags& pane_a, 
     m_isDirtySystemData = true;
 }
 
+void Device::clearRestirBuffers() {
+    m_reset_restir = true;
+}
+
 GeometryData Device::createGeometry(std::shared_ptr<sg::Triangles> geometry)
 {
   activateContext();
@@ -1805,16 +1818,6 @@ bool Device::matchLUID(const char* luid, const unsigned int nodeMask)
   return true;
 }
 
-template<typename T>
-inline T align_up(T num, T align) {
-  return ((num - 1) / align + 1) * align;
-}
-
-template<typename T>
-inline T div_up(T num, T align) {
-    return ((num - 1) / align + 1);
-}
-
 void Device::activateContext() const
 {
   CU_CHECK( cuCtxSetCurrent(m_cudaContext) ); 
@@ -1830,6 +1833,14 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
     activateContext();
 
     m_systemData.iterationIndex = iterationIndex;
+
+    // TODO Avoid recomputing this
+    size_t reservior_size = align_up<size_t>(sizeof(Reservoir), 32);
+    size_t indiv_rsv_size = reservior_size * m_systemData.resolution.x * m_systemData.resolution.y;
+
+    // TODO: handle dynamic resize
+    int spp = m_systemData.spp;
+    int big_buffer_size = indiv_rsv_size * spp;
 
     if (m_isDirtyOutputBuffer)
     {
@@ -1855,17 +1866,17 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
 
                 // TODO: handle dynamic resize
                 int spp = m_systemData.spp;
-                printf("creating %i x 2 reservoirs of size %llu ... \n", spp, indiv_rsv_size);
+                printf("creating %i x 3 reservoirs of size %llu ... \n", spp, indiv_rsv_size);
                 int big_buffer_size = indiv_rsv_size * spp;
 
                 m_systemData.big_buffer_size = big_buffer_size;
                 m_systemData.RISOutputReservoirBuffer = memAlloc(big_buffer_size, 64);
                 m_systemData.SpatialOutputReservoirBuffer = memAlloc(big_buffer_size, 64);
-                m_systemData.TempReservoirBuffer = memAlloc(indiv_rsv_size, 64);
+                m_systemData.TempReservoirBuffer = memAlloc(big_buffer_size, 64);
 
                 CU_CHECK(cuMemsetD8(m_systemData.RISOutputReservoirBuffer, uint8_t(0), big_buffer_size));
                 CU_CHECK(cuMemsetD8(m_systemData.SpatialOutputReservoirBuffer, uint8_t(0), big_buffer_size));
-                CU_CHECK(cuMemsetD8(m_systemData.TempReservoirBuffer, uint8_t(0), indiv_rsv_size));
+                CU_CHECK(cuMemsetD8(m_systemData.TempReservoirBuffer, uint8_t(0), big_buffer_size));
             } else {
                 m_systemData.big_buffer_size = 0;
                 m_systemData.RISOutputReservoirBuffer = 0;
@@ -1955,6 +1966,16 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
     {
         synchronizeStream();
 
+        if (m_reset_restir && m_ref_device != nullptr) {
+            printf("Clearing Restir Buffers\n\n\n\n\n\n\n");
+
+            CU_CHECK(cuMemsetD8(m_systemData.RISOutputReservoirBuffer, uint8_t(0), big_buffer_size));
+            CU_CHECK(cuMemsetD8(m_systemData.SpatialOutputReservoirBuffer, uint8_t(0), big_buffer_size));
+            CU_CHECK(cuMemsetD8(m_systemData.TempReservoirBuffer, uint8_t(0), big_buffer_size));
+
+            m_reset_restir = false;
+        }
+
         CU_CHECK( cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(m_d_systemData), &m_systemData, sizeof(SystemData)) );
         m_isDirtySystemData = false;
     }
@@ -1975,6 +1996,11 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
     // Note the launch width per device to render in tiles.
     // std::cout << "OptixLaunch: ref = " << int32_t(m_ref_device == nullptr) << std::endl;
     OPTIX_CHECK( m_api.optixLaunch(m_pipeline, m_cudaStream, reinterpret_cast<CUdeviceptr>(m_d_systemData), sizeof(SystemData), &m_sbt, m_launchWidth, m_systemData.resolution.y, /* depth */ 1) );
+
+    // if (m_ref_device) {
+    //     // TODO Striking with too big of a hammer here
+    //     CU_CHECK(cuMemcpyDtoDAsync(m_systemDatam_systemData.RISOutputReservoirBuffer, big_buffer_size, m_cudaStream) );
+    // }
 
 
     // Compute PSNR

@@ -469,6 +469,8 @@ public:
 
   void initTextureHandler(std::vector<MaterialMDL*>& materialsMDL);
 
+  void clearRestirBuffers();
+
 private:
   OptixResult initFunctionTable();
   void initDeviceAttributes();
@@ -478,6 +480,9 @@ private:
   bool prepare_mbsdfs_part(mi::neuraylib::Mbsdf_part part,
                            MbsdfHost& host,
                            const mi::neuraylib::IBsdf_measurement* bsdf_measurement);
+
+
+  bool m_reset_restir = false;
 
 public:
   // Constructor arguments:

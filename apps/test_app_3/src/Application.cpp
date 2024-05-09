@@ -461,7 +461,7 @@ void Application::reshape(const int w, const int h)
   }
 }
 
-void Application::restartRendering(bool recompute_ref)
+void Application::restartRendering(bool recompute_ref, bool reset_restir_buffers)
 {
   guiRenderingIndicator(true);
 
@@ -475,6 +475,10 @@ void Application::restartRendering(bool recompute_ref)
 
   if (m_compute_ref && recompute_ref) {
       renderRef(false);
+  }
+
+  if (reset_restir_buffers) {
+      m_raytracer->clearRestirBuffers();
   }
 
   m_timer.restart();
@@ -1233,6 +1237,11 @@ void Application::guiWindow()
         }
         if (ImGui::Checkbox("Temporal reuse1 3", &m_renderingGUI.pane_c.do_temporal_reuse)) {
             refresh = true;
+        }
+
+        if (ImGui::Button("Reset Restir buffers")) {
+            restartRendering(true, true);
+            refresh = false;
         }
     }
 

@@ -81,6 +81,8 @@ public:
   void updateDisplayTexture();
   const void* getOutputBufferHost();
 
+  void clearRestirBuffers();
+
   //void setMdlIface(MdlWrapper* mdl_wrapper);
 
 private:
