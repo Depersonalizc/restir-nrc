@@ -93,12 +93,17 @@ struct PerRayData
 
   int depth;
 
+  uint32_t prev_primitive_idx;
+  uint32_t prev_instance_id;
+  float3 last_wi;
+  float2   last_barycentrics;
+  bool shadow_ray;
+
   unsigned int seed;  // Random number generator input.
   uint2 launchDim;
   uint2 launchIndex;
   int launch_linear_index;
   bool do_reference;
-  bool do_ris_resampling;
   bool do_spatial_resampling;
   bool do_temporal_resampling;
   bool padding;

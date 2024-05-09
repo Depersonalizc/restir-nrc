@@ -212,7 +212,7 @@ Application::Application(GLFWwindow* window, const Options& options)
 
     m_renderingGUI.num_panes = 1;
     m_renderingGUI.pane_a = {false, 1, false, false, false};
-    m_renderingGUI.pane_b = {false, 0, false, true, false};
+    m_renderingGUI.pane_b = {false, 0, false, false, false};
     m_renderingGUI.pane_c = {false, false, false, false, false};
 
     m_rotationEnvironment[0] = 0.0f;
@@ -1210,10 +1210,10 @@ void Application::guiWindow()
         if (ImGui::SliderInt("RIS 1", &m_renderingGUI.pane_a.ris_samples, 0, 64)) {
             refresh = true;
         }
-        if (ImGui::Checkbox("Spatial reuse 1", &m_renderingGUI.pane_a.do_spatial_reuse)) {
+        if (ImGui::Checkbox("Temporal reuse 1", &m_renderingGUI.pane_a.do_temporal_reuse)) {
             refresh = true;
         }
-        if (ImGui::Checkbox("Temporal reuse 1", &m_renderingGUI.pane_a.do_temporal_reuse)) {
+        if (ImGui::Checkbox("Spatial reuse 1", &m_renderingGUI.pane_a.do_spatial_reuse)) {
             refresh = true;
         }
 
@@ -1221,21 +1221,22 @@ void Application::guiWindow()
 
             refresh = true;
         }
-        if (ImGui::Checkbox("Spatial reuse1 2", &m_renderingGUI.pane_b.do_spatial_reuse)) {
-            refresh = true;
-        }
         if (ImGui::Checkbox("Temporal reuse1 2", &m_renderingGUI.pane_b.do_temporal_reuse)) {
             refresh = true;
         }
+        if (ImGui::Checkbox("Spatial reuse1 2", &m_renderingGUI.pane_b.do_spatial_reuse)) {
+            refresh = true;
+        }
+
 
         if (ImGui::SliderInt("RIS 3", &m_renderingGUI.pane_c.ris_samples, 0, 64)) {
 
             refresh = true;
         }
-        if (ImGui::Checkbox("Spatial reuse1 3", &m_renderingGUI.pane_c.do_spatial_reuse)) {
+        if (ImGui::Checkbox("Temporal reuse1 3", &m_renderingGUI.pane_c.do_temporal_reuse)) {
             refresh = true;
         }
-        if (ImGui::Checkbox("Temporal reuse1 3", &m_renderingGUI.pane_c.do_temporal_reuse)) {
+        if (ImGui::Checkbox("Spatial reuse1 3", &m_renderingGUI.pane_c.do_spatial_reuse)) {
             refresh = true;
         }
 

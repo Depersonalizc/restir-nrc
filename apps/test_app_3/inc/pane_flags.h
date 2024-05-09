@@ -4,8 +4,8 @@
 struct PaneFlags {
     bool    do_reference;
     int32_t ris_samples;
-    bool    do_spatial_reuse;
     bool    do_temporal_reuse;
+    bool    do_spatial_reuse;
     bool    do_nrc;
 };
 

@@ -77,6 +77,186 @@ extern "C" __global__ void __closesthit__radiance()
   // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
   PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
+  if (thePrd->shadow_ray) {
+      thePrd->radiance = make_float3(0);
+      thePrd->throughput = make_float3(0);
+
+      float3 origin  = thePrd->pos;
+      float3 dir     = thePrd->wi;
+      float3 wo      = -thePrd->last_wi;
+      uint32_t primitive_idx = thePrd->prev_primitive_idx;
+
+      // printf("shadowray set in __closesthit__radiance!\n");
+      // printf("origin %f %f %f", origin.x, origin.y, origin.z);
+      // printf("dir %f %f %f", dir.x, dir.y, dir.z);
+      // printf("wo %f %f %f", wo.x, wo.y, wo.z);
+      // printf("primitive_idx %d", primitive_idx);
+
+
+
+
+      const GeometryInstanceData theData = sysData.geometryInstanceData[thePrd->prev_instance_id];
+      // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
+
+      // Cast the CUdeviceptr to the actual format of the Triangles attributes and indices.
+      const uint3* indices = reinterpret_cast<uint3*>(theData.indices);
+      const uint3  tri     = indices[primitive_idx];
+
+      const TriangleAttributes* attributes = reinterpret_cast<const TriangleAttributes*>(theData.attributes);
+
+      const TriangleAttributes& attr0 = attributes[tri.x];
+      const TriangleAttributes& attr1 = attributes[tri.y];
+      const TriangleAttributes& attr2 = attributes[tri.z];
+
+      const float2 theBarycentrics = thePrd->last_barycentrics; // beta and gamma
+      const float  alpha = 1.0f - theBarycentrics.x - theBarycentrics.y;
+
+      float4 objectToWorld[3];
+      float4 worldToObject[3];
+
+      getTransforms(optixGetTransformListHandle(0), objectToWorld, worldToObject); // Single instance level transformation list only.
+
+      // Object space vertex attributes at the hit point.
+      float3 ns = attr0.normal * alpha + attr1.normal * theBarycentrics.x + attr2.normal * theBarycentrics.y;
+      float3 ng = cross(attr1.vertex - attr0.vertex, attr2.vertex - attr0.vertex);
+      float3 tg = attr0.tangent * alpha + attr1.tangent * theBarycentrics.x + attr2.tangent * theBarycentrics.y;
+
+      // Transform attributes into internal space == world space.
+      ns = normalize(transformNormal(worldToObject, ns));
+      ng = normalize(transformNormal(worldToObject, ng));
+      tg = normalize(transformVector(objectToWorld, tg));
+      // Calculate an ortho-normal system respective to the shading normal.
+      float3 bt = normalize(cross(ns, tg));
+      tg = cross(bt, ns); // Now the tangent is orthogonal to the shading normal.
+
+      // The Mdl_state holds the texture attributes per texture space in separate arrays.
+      float3 texture_coordinates[NUM_TEXTURE_SPACES];
+      float3 texture_tangents[NUM_TEXTURE_SPACES];
+      float3 texture_bitangents[NUM_TEXTURE_SPACES];
+
+      // NUM_TEXTURE_SPACES is always at least 1.
+      texture_coordinates[0] = attr0.texcoord * alpha + attr1.texcoord * theBarycentrics.x + attr2.texcoord * theBarycentrics.y;
+      texture_bitangents[0]  = bt;
+      texture_tangents[0]    = tg;
+
+#if NUM_TEXTURE_SPACES == 2
+        // HACK Copy the vertex attributes of texture space 0, simply because there is no second texcoord inside TriangleAttributes.
+        texture_coordinates[1] = texture_coordinates[0];
+        texture_bitangents[1]  = bt;
+        texture_tangents[1]    = tg;
+#endif
+
+        // Setup the Mdl_state.
+        Mdl_state state;
+
+        float4 texture_results[NUM_TEXTURE_RESULTS];
+
+        // For explanations of these fields see comments inside __closesthit__radiance above.
+        state.normal                = ns;
+        state.geom_normal           = ng;
+        state.position              = origin;
+        state.animation_time        = 0.0f;
+        state.text_coords           = texture_coordinates;
+        state.tangent_u             = texture_tangents;
+        state.tangent_v             = texture_bitangents;
+        state.text_results          = texture_results;
+        state.ro_data_segment       = nullptr;
+        state.world_to_object       = worldToObject;
+        state.object_to_world       = objectToWorld;
+        state.object_id             = theData.ids.z;
+        state.meters_per_scene_unit = 1.0f;
+
+        const MaterialDefinitionMDL& material = sysData.materialDefinitionsMDL[theData.ids.x];
+
+        mi::neuraylib::Resource_data res_data = { nullptr, material.texture_handler };
+
+        const DeviceShaderConfiguration& shaderConfiguration = sysData.shaderConfigurations[material.indexShader];
+
+        // Using a single material init function instead of per distribution init functions.
+        // This is always present, even if it just returns.
+        optixDirectCall<void>(shaderConfiguration.idxCallInit, &state, &res_data, material.arg_block);
+
+        // Explicitly include edge-on cases as frontface condition!
+        // Keeps the material stack from overflowing at silhouettes.
+        // Prevents that silhouettes of thin-walled materials use the backface material.
+        // Using the true geometry normal attribute as originally defined on the frontface!
+        const bool isFrontFace = (0.0f <= dot(-dir, state.geom_normal));
+
+        // thin_walled value in case the expression is a constant.
+        bool thin_walled = ((shaderConfiguration.flags & IS_THIN_WALLED) != 0);
+
+        if (0 <= shaderConfiguration.idxCallThinWalled)
+        {
+            thin_walled = optixDirectCall<bool>(shaderConfiguration.idxCallThinWalled, &state, &res_data, material.arg_block);
+        }
+
+        // IOR value in case the material ior expression is constant.
+        float3 ior = shaderConfiguration.ior;
+
+        if (0 <= shaderConfiguration.idxCallIor)
+        {
+            ior = optixDirectCall<float3>(shaderConfiguration.idxCallIor, &state, &res_data, material.arg_block);
+        }
+
+        // Start fresh with the next BSDF sample.
+        // Save the current path throughput for the direct lighting contribution.
+        // The path throughput will be modulated with the BSDF sampling results before that.
+        float3 bxdf = make_float3(0);
+
+        // Determine which BSDF to use when the material is thin-walled.
+        int idxCallScatteringSample = shaderConfiguration.idxCallSurfaceScatteringSample;
+        int idxCallScatteringEval   = shaderConfiguration.idxCallSurfaceScatteringEval;
+
+        // thin-walled and looking at the backface and backface.scattering expression available?
+        if (thin_walled && !isFrontFace && 0 <= shaderConfiguration.idxCallBackfaceScatteringSample)
+        {
+            // Use the backface.scattering BSDF sample and evaluation functions.
+            // Apparently the MDL code can handle front- and backfacing calculations appropriately with the original state and the properly setup volume IORs.
+            // No need to flip normals to the ray side.
+            idxCallScatteringSample = shaderConfiguration.idxCallBackfaceScatteringSample;
+            idxCallScatteringEval   = shaderConfiguration.idxCallBackfaceScatteringEval; // Assumes both are valid.
+        }
+
+        if (0 <= idxCallScatteringSample)
+        {
+            mi::neuraylib::Bsdf_evaluate_data<mi::neuraylib::DF_HSM_NONE> eval_data;
+
+            if (isFrontFace || thin_walled)
+            {
+                eval_data.ior1 = make_float3(0.f);;
+                eval_data.ior2 = ior;
+            }
+            else
+            {
+                eval_data.ior1 = ior;
+                eval_data.ior2 = make_float3(0.f);
+            }
+
+            eval_data.k1 = wo;
+            eval_data.k2 = dir;
+
+            optixDirectCall<void>(idxCallScatteringEval, &eval_data, &state, &res_data, material.arg_block);
+            bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
+
+            if (0.0f >= eval_data.pdf || isNull(bxdf)) {
+                //printf("expensive shadow ray exiting due to: eval_data.pdf = %f or isNull(bxdf) %d\n", eval_data.pdf, isNull(bxdf));
+                thePrd->throughput = make_float3(0);
+            }
+            thePrd->throughput = bxdf;
+        }
+        else
+        {
+            //printf("expensive shadow ray: ray absorbed!");
+            // If there is no valid scattering BSDF, it's the black bsdf() which ends the path.
+            // This is usually happening with arbitrary mesh lights when only specifying emission.
+            //thePrd->eventType = mi::neuraylib::BSDF_EVENT_ABSORB;
+            // None of the following code will have any effect in that case.
+            thePrd->throughput = make_float3(0);
+        }
+
+        return;
+  }
+
   thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
 
   thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
@@ -848,6 +1028,18 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
     // Get the current rtPayload pointer from the unsigned int payload registers p0 and p1.
     PerRayData* thePrd = mergePointer(optixGetPayload_0(), optixGetPayload_1());
 
+    if (thePrd->shadow_ray) {
+
+        //printf("shadowray set in __closesthit__radiance_no_emission_ris!\n");
+
+        thePrd->flags |= FLAG_SHADOW;
+        // Hit something non-emissive, gtfo
+        thePrd->radiance = make_float3(0);
+        thePrd->throughput = make_float3(0);
+
+        return;
+    }
+
     thePrd->flags |= FLAG_HIT; // Required to distinguish surface hits from random walk miss.
 
     thePrd->distance = optixGetRayTmax(); // Return the current path segment distance, needed for absorption calculations in the integrator.
@@ -867,7 +1059,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
         ++thePrd->walk;
     }
 
-    const GeometryInstanceData theData = sysData.geometryInstanceData[optixGetInstanceId()];
+    const uint32_t optix_instance_id = optixGetInstanceId();
+    const GeometryInstanceData theData = sysData.geometryInstanceData[optix_instance_id];
     // theData.ids: .x = idMaterial, .y = idLight, .z = idObject
 
     const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();
@@ -971,6 +1164,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
     {
         ior = optixDirectCall<float3>(shaderConfiguration.idxCallIor, &state, &res_data, material.arg_block);
     }
+
+    const float3 last_wi = thePrd->wi;
 
     // Start fresh with the next BSDF sample.
     // Save the current path throughput for the direct lighting contribution.
@@ -1107,7 +1302,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                     optixDirectCall<void>(idxCallScatteringEval, &eval_data, &state, &res_data, material.arg_block);
                     const float3 bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
 
-                    if (0.0f >= eval_data.pdf && isNull(bxdf)) {
+                    if (0.0f >= eval_data.pdf || isNull(bxdf)) {
                         continue;
                     }
                     //pdf = X_i.pdf;
@@ -1192,7 +1387,12 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
             if (isnan(current_reservoir->W) || isinf(current_reservoir->W)) current_reservoir->W = 0;
 
-            current_reservoir->nearest_hit = thePrd->pos;
+            current_reservoir->nearest_hit        = thePrd->pos;
+            current_reservoir->last_wi            = last_wi;
+            current_reservoir->prev_primitive_idx = thePrimitiveIndex;
+            current_reservoir->prev_instance_id   = optix_instance_id;
+            current_reservoir->last_barycentrics  = theBarycentrics;
+            current_reservoir->prev_info_valid    = true;
         } else {
             // not RIS
 
@@ -1241,63 +1441,48 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
             if (0.0f < eval_data.pdf && isNotNull(bxdf))
             {
                 // Pass the current payload registers through to the shadow ray.
-                // unsigned int p0 = optixGetPayload_0();
-                // unsigned int p1 = optixGetPayload_1();
+                unsigned int p0 = optixGetPayload_0();
+                unsigned int p1 = optixGetPayload_1();
 
-                // thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
+                thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
 
-                // int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                // if (tidx == 131328) {
-                //     printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
-                //            thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lightSample.direction.x, lightSample.direction.y, lightSample.direction.z);
-                // }
-                // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
-                // to prevent self-intersections with the actual light geometry in the scene.
-                // optixTrace(sysData.topObject,
-                //            thePrd->pos, lightSample.direction, // origin, direction
-                //            sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
-                //            OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
-                //            TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
-                //            p0, p1); // Pass through thePrd to the shadow ray.
+                int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
+                if (tidx == 131328) {
+                    printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
+                           thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lightSample->direction.x, lightSample->direction.y, lightSample->direction.z);
+                }
+                //Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
+                //to prevent self-intersections with the actual light geometry in the scene.
+                optixTrace(sysData.topObject,
+                           thePrd->pos, lightSample->direction, // origin, direction
+                           sysData.sceneEpsilon, lightSample->distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
+                           OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
+                           TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
+                           p0, p1); // Pass through thePrd to the shadow ray.
 
-                // if ((thePrd->flags & FLAG_SHADOW) == 0) // Visibility test failed
-                // {
-                //     if(do_ris){
-                //         float W = current_reservoir->W;
-                //         float3 f_q =
-                //             lightSample.pdf * lightSample.radiance_over_pdf *
-                //             throughput * bxdf;
+                if ((thePrd->flags & FLAG_SHADOW) == 0) // Visibility test passed
+                {
+                    if(!do_ris){
+                        const float weightMIS = (TYPE_LIGHT_POINT <= light->typeLight) ?
+                                                    1.0f : balanceHeuristic(lightSample->pdf, eval_data.pdf);
 
-                //         current_reservoir->y.f_actual = f_q;
-
-                //         int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                //         if (tidx == 131328) {
-                //             printf("Point NOT in shadow: reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-                //         }
-                //         thePrd->radiance += f_q * W;
-
-                //     } else {
-                //         const float weightMIS = (TYPE_LIGHT_POINT <= light->typeLight) ?
-                //                                     1.0f : balanceHeuristic(lightSample.pdf, eval_data.pdf);
-
-                //         // The sampled emission needs to be scaled by the inverse probability to have selected this light,
-                //         // Selecting one of many lights means the inverse of 1.0f / numLights.
-                //         // This is using the path throughput before the sampling modulated it above.
-                //         if (tidx == 131328) {
-                //             printf("Point NOT in shadow\n");
-                //         }
-                //         thePrd->radiance += throughput * bxdf * lightSample.radiance_over_pdf * (float(numLights) * weightMIS);
-                //     }
-                // }
-                // else {
-                //     if(do_ris) {
-                //         int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                //         if (tidx == 131328) {
-                //             printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
-                //         }
-                //         *current_reservoir = zero_reservoir;
-                //     }
-                // }
+                        // The sampled emission needs to be scaled by the inverse probability to have selected this light,
+                        // Selecting one of many lights means the inverse of 1.0f / numLights.
+                        // This is using the path throughput before the sampling modulated it above.
+                        if (tidx == 131328) {
+                            printf("Point NOT in shadow\n");
+                        }
+                        thePrd->radiance += throughput * bxdf * lightSample->radiance_over_pdf * (float(numLights) * weightMIS);
+                    }
+                } else {
+                    if(do_ris) {
+                        int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
+                        if (tidx == 131328) {
+                            printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
+                        }
+                        clear_reservoir(*current_reservoir);
+                    }
+                }
             } else {
                 if(do_ris) {
                     int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
@@ -1314,8 +1499,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
     if (tidx == 131328 && do_ris) {
         Reservoir* current_reservoir;
 
-        int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
         int lidx = thePrd->launch_linear_index;
+        // if (tidx != lidx) {
+        //     printf("WEIRD: tidx != lidx   %d != %d\n", tidx, lidx);
+        // }
         Reservoir* ris_output_reservoir_buffer = reinterpret_cast<Reservoir*>(sysData.RISOutputReservoirBuffer);
         current_reservoir = &ris_output_reservoir_buffer[lidx];
 
@@ -1495,6 +1682,7 @@ extern "C" __global__ void __anyhit__shadow()
 
 extern "C" __global__ void __anyhit__shadow_cutout() // For the radiance ray type.
 {
+    printf("in anyhhit_shadow_cutout\n");
   const GeometryInstanceData theData = sysData.geometryInstanceData[optixGetInstanceId()];
 
   const unsigned int thePrimitiveIndex = optixGetPrimitiveIndex();

@@ -102,8 +102,14 @@ struct Reservoir
   float w_sum;
   int M;    // Really c (in the new Restir notes)
   float W;
-  float3 nearest_hit;
-  float3  throughput_x_bxdf;
+  float3   nearest_hit;
+  float3   throughput_x_bxdf;
+  float3   last_wi;
+  float2   last_barycentrics;
+  uint32_t prev_primitive_idx;
+  uint32_t prev_instance_id;
+
+  bool prev_info_valid = false;
 };
 
 __forceinline__ __device__ void clear_reservoir(Reservoir& rsv) { // but keep nearest hit and throughput

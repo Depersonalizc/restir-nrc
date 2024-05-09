@@ -35,7 +35,9 @@
 #include "shader_common.h"
 #include "half_common.h"
 #include "random_number_generators.h"
+#include "transform.h"
 
+typedef mi::neuraylib::Shading_state_material Mdl_state;
 
 extern "C" __constant__ SystemData sysData;
 
@@ -162,6 +164,8 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
   prd.sigma_t    = make_float3(0.0f); // Extinction coefficient: sigma_a + sigma_s.
   prd.walk       = 0;                 // Number of random walk steps taken through volume scattering. 
   prd.eventType  = mi::neuraylib::BSDF_EVENT_ABSORB; // Initialize for exit. (Otherwise miss programs do not work.)
+  prd.shadow_ray = false;
+  prd.prev_primitive_idx = 0;
   // Nested material handling. 
   prd.idxStack   = 0;
   // Small stack of four entries of which the first is vacuum.
@@ -282,6 +286,58 @@ __forceinline__ __device__ float3 integrator(PerRayData& prd, int index)
   }
   
   return prd.radiance;
+}
+
+__forceinline__ __device__ float3 expensive_shadow_ray(Reservoir& rsv) {
+    float3 origin  = rsv.nearest_hit;
+    float3 dir     = rsv.y.direction;
+    float3 last_wi = rsv.last_wi;
+    uint32_t primitive_idx = rsv.prev_primitive_idx;
+
+    PerRayData prd;
+    prd.pos                = origin;
+    prd.wi                 = dir;
+    prd.prev_primitive_idx = primitive_idx;
+    prd.prev_instance_id  = rsv.prev_instance_id;
+
+    prd.shadow_ray         = true;
+    prd.distance           = rsv.y.distance;
+    prd.last_barycentrics  = rsv.last_barycentrics;
+
+    prd.last_wi            = last_wi;
+
+    uint2 payload = splitPointer(&prd);
+
+#if (USE_SHADER_EXECUTION_REORDERING == 0 || OPTIX_VERSION < 80000)
+    // Note that the primary rays and volume scattering miss cases do not offset the ray t_min by sysSceneEpsilon.
+    optixTrace(sysData.topObject,
+               prd.pos, prd.wi, // origin, direction
+               sysData.sceneEpsilon, prd.distance, 0.0f, // tmin, tmax, time
+               OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_NONE,
+               TYPE_RAY_RADIANCE, NUM_RAY_TYPES, TYPE_RAY_RADIANCE,
+               payload.x, payload.y);
+#else
+    // OptiX Shader Execution Reordering (SER) implementation.
+    optixTraverse(sysData.topObject,
+                  prd.pos, prd.wi, // origin, direction
+                  sysData.sceneEpsilon, prd.distance+2, 0.0f, // tmin, tmax, time
+                  OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_NONE,
+                  TYPE_RAY_RADIANCE, NUM_RAY_TYPES, TYPE_RAY_RADIANCE,
+                  payload.x, payload.y);
+
+    unsigned int hint = 0; // miss uses some default value. The record type itself will distinguish this case.
+    if (optixHitObjectIsHit())
+    {
+        const int idMaterial = sysData.geometryInstanceData[optixHitObjectGetInstanceId()].ids.x;
+        hint = sysData.materialDefinitionsMDL[idMaterial].indexShader; // Shader configuration only.
+    }
+    optixReorder(hint, sysData.numBitsShaders);
+
+    optixInvoke(payload.x, payload.y);
+#endif
+
+    return prd.throughput;
+
 }
 
 
@@ -545,7 +601,11 @@ extern "C" __global__ void __raygen__path_tracer()
                 float nbr_phat = length(y->radiance_over_pdf) * y->pdf;
                 float cur_phat = length(updated_reservoir.y.radiance_over_pdf) * updated_reservoir.y.pdf;
 
-                float m_neighbor = balanceHeuristic(neighbor_reservoir->M * nbr_phat, updated_reservoir.M * cur_phat);
+                float dist_between_hits = length(neighbor_reservoir->nearest_hit - updated_reservoir.nearest_hit);
+                float wght_due_to_dist  = 1.f / (dist_between_hits + 1.f);
+
+                float m_neighbor = balanceHeuristic(neighbor_reservoir->M * nbr_phat, updated_reservoir.M * cur_phat) * wght_due_to_dist;
+
 
                 if (neighbor_reservoir->W > 0) {
                     updateReservoir(
@@ -594,15 +654,27 @@ extern "C" __global__ void __raygen__path_tracer()
             if (tidx == 131328) {
                 printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
                        prd.pos.x,prd.pos.y,prd.pos.z, lightSample.direction.x, lightSample.direction.y, lightSample.direction.z);
+                printf("prev_info_valid %d\n", final_reservoir.prev_info_valid);
             }
+
             // Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
             // to prevent self-intersections with the actual light geometry in the scene.
-            optixTrace(sysData.topObject,
-                       final_reservoir.nearest_hit, lightSample.direction, // origin, direction
-                       sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
-                       OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
-                       TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
-                       payload.x, payload.y); // Pass through thePrd to the shadow ray.
+            // if (final_reservoir.prev_info_valid) {
+            //     if (tidx == 131328) {
+            //         printf("about to shoot expensive ray. length(final_reservoir.throughput_x_bxdf) = %f\n", length(final_reservoir.throughput_x_bxdf));
+            //     }
+            //     final_reservoir.throughput_x_bxdf = expensive_shadow_ray(final_reservoir);
+            //     if (tidx == 131328) {
+            //         printf("resulting length(final_reservoir.throughput_x_bxdf) = %f\n", length(final_reservoir.throughput_x_bxdf));
+            //     }
+            // } else {
+                optixTrace(sysData.topObject,
+                           final_reservoir.nearest_hit, lightSample.direction, // origin, direction
+                           sysData.sceneEpsilon, lightSample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
+                           OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
+                           TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
+                           payload.x, payload.y); // Pass through thePrd to the shadow ray.
+            //}
 
             if ((prd.flags & FLAG_SHADOW) == 0) // Visibility test succeeded
             {
