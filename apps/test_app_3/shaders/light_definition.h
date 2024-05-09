@@ -100,7 +100,7 @@ struct Reservoir
 {
   LightSample y;
   float w_sum;
-  int M;
+  int M;    // Really c (in the new Restir notes)
   float W;
   float3 nearest_hit;
   float3  throughput_x_bxdf;
@@ -119,6 +119,7 @@ __forceinline__ __device__ void clear_reservoir(Reservoir& rsv) { // but keep ne
 __forceinline__ __device__ void updateReservoir(Reservoir* r, LightSample* x_i, float w_i, unsigned int* seed)
 {
     r->w_sum += w_i;
+    //r->M = min(r->M + 1, 20);
     r->M += 1;
 
     // float3 test_rad = x_i->radiance_over_pdf;

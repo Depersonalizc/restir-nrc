@@ -1105,6 +1105,11 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                     eval_data.k2 = X_i.direction;
 
                     optixDirectCall<void>(idxCallScatteringEval, &eval_data, &state, &res_data, material.arg_block);
+                    const float3 bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
+
+                    if (0.0f >= eval_data.pdf && isNull(bxdf)) {
+                        continue;
+                    }
                     //pdf = X_i.pdf;
                     pdf = (TYPE_LIGHT_POINT <= lght.typeLight) ?
                               pdf : balanceHeuristic(X_i.pdf, eval_data.pdf);
@@ -1117,7 +1122,12 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
                 float p_hat = length(X_i.radiance_over_pdf) * pdf;
 
+                if (isnan(p_hat) || isinf(p_hat)) {
+                    continue;
+                }
+
                 X_i.pdf = pdf;
+
 
                 // if (tidx == 131328) {
                 //     printf("inside hit: generating light sample X_i.radiance_over_pdf = %f\tX_i.pdf = %f\n",
@@ -1151,6 +1161,8 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                 //     printf("inside hit: reservoir before update w_sum = %f\tW = %f\tM = %d\n",
                 //            current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
                 // }
+
+
                 updateReservoir(current_reservoir, &X_i, w_i, &thePrd->seed);
 
                 // if (tidx == 131328) {
@@ -1172,7 +1184,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
             current_reservoir->W =
                 (1.0f / (length(lightSample->radiance_over_pdf) * lightSample->pdf)) *  // 1 / p_hat
-                current_reservoir->w_sum;                         // w_sum
+                                   current_reservoir->w_sum;                         // w_sum
 
             if (tidx == 131328) {
                 printf("current_reservoir->W = %f\n", current_reservoir->W);

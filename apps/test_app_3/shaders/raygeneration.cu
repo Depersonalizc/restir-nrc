@@ -496,11 +496,13 @@ extern "C" __global__ void __raygen__path_tracer()
             }
             Reservoir& updated_reservoir = ris_output_reservoir_buffer[lidx_ris];
             if (index == 131328) {
-                printf("spatial reservoir TEST INTIIAL VALUE = %f\tW = %f\tM = %d\n", updated_reservoir.w_sum, updated_reservoir.W, updated_reservoir.M);
+                printf("spatial reservoir TEST INTIIAL VALUE w_sum = %f\tW = %f\tM = %d\n", updated_reservoir.w_sum, updated_reservoir.W, updated_reservoir.M);
+                printf("\tlight sample direction = %f,%f,%f\n", updated_reservoir.y.direction.x, updated_reservoir.y.direction.y,updated_reservoir.y.direction.z);
+
             }
 
             int k = 5;
-            int radius = 30;
+            int radius = 20;
             int num_k_sampled = 0;
             int total_M = updated_reservoir.M;
 
@@ -525,12 +527,20 @@ extern "C" __global__ void __raygen__path_tracer()
 
                 if (index == 131328) {
                     printf("NEIGHBOR: %d reservoir w_sum = %f\tW = %f\tM = %d\n", neighbor_index, neighbor_reservoir->w_sum, neighbor_reservoir->W, neighbor_reservoir->M);
+                    printf("\tneighbor direction = %f,%f,%f\n", y->direction.x, y->direction.y, y->direction.z);
+                    printf("\tneighbor light pdf = %f\tphat = %f\n", y->pdf, length(y->radiance_over_pdf));
+
                 }
+
+                float nbr_phat = length(y->radiance_over_pdf) * y->pdf;
+                float cur_phat = length(updated_reservoir.y.radiance_over_pdf) * updated_reservoir.y.pdf;
+
+                float m_neighbor = balanceHeuristic(neighbor_reservoir->M * nbr_phat, updated_reservoir.M * cur_phat);
                 if (neighbor_reservoir->W > 0) {
                     updateReservoir(
                         &updated_reservoir,
                         y,
-                        length(y->radiance_over_pdf) * y->pdf * neighbor_reservoir->W * neighbor_reservoir->M,
+                        length(y->radiance_over_pdf) * y->pdf * m_neighbor * neighbor_reservoir->W,
                         &prd.seed
                         );
                     total_M += neighbor_reservoir->M;
@@ -538,10 +548,9 @@ extern "C" __global__ void __raygen__path_tracer()
             }
 
             LightSample& y = updated_reservoir.y;
-            updated_reservoir.M = total_M;
+            updated_reservoir.M = min(total_M, 40);
             updated_reservoir.W =
-                (1.0f / (length(y.radiance_over_pdf) * y.pdf)) *  // 1 / p_hat
-                (1.0f / updated_reservoir.M) *
+                (1.0f / (length(y.radiance_over_pdf) * y.pdf)) * // 1 / p_hat
                 updated_reservoir.w_sum;
 
             // Keep a copy of the updated reservoir for the next-frame's temporal reuse
@@ -562,7 +571,6 @@ extern "C" __global__ void __raygen__path_tracer()
 
         }
         if (final_reservoir.M > 0 && length(final_reservoir.throughput_x_bxdf) > 0) {
-
             LightSample& lightSample = final_reservoir.y;
             // Pass the current payload registers through to the shadow ray.
             uint2 payload = splitPointer(&prd);
@@ -594,17 +602,22 @@ extern "C" __global__ void __raygen__path_tracer()
                 if (tidx == 131328) {
                     printf("Point NOT in shadow: reservoir w_sum = %f\tW = %f\tM = %d\n", final_reservoir.w_sum, final_reservoir.W, final_reservoir.M);
                 }
-                radiance += f_q * W / 10;
+                radiance += f_q * W;
             } else {
                 int tidx = prd.launchIndex.y * prd.launchDim.x + prd.launchIndex.x;
                 if (tidx == 131328) {
                     printf("Zeroing out reservoir due to (prd.flags & FLAG_SHADOW) == 0 being false\n");
                 }
                 clear_reservoir(final_reservoir);
+                spatial_output_reservoir_buffer[lidx_ris] = final_reservoir;
                 ris_output_reservoir_buffer[lidx_ris] = final_reservoir;
             }
-         }
-     }
+        } else {
+            clear_reservoir(final_reservoir);
+            spatial_output_reservoir_buffer[lidx_ris] = final_reservoir;
+            ris_output_reservoir_buffer[lidx_ris] = final_reservoir;
+        }
+    }
 
     if (prd.do_temporal_resampling && sysData.cur_iter != 0) {
         // Forward data to the next frame
