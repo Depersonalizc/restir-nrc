@@ -44,6 +44,9 @@
 #include "inc/CheckMacros.h"
 
 #include "inc/MyAssert.h"
+#include "../shaders/vertex_attributes.h"
+#include <cfloat>
+#include <vector_types.h>
 
  // Make sure the working directory contains (a symlink of) the `data` folder
 std::filesystem::path Application::s_assetDir{ "./data/" };
@@ -357,12 +360,31 @@ Application::Application(GLFWwindow* window, const Options& options)
 
 		// Only when all MDL materials have been initialized, the information about which of them contains emissions is available inside the m_materialsMDL.
 		// Traverse the scene once and generate light definitions for the meshes with emissive materials.
+		this->AABBMinBounds = float3(FLT_MAX, FLT_MAX, FLT_MAX);
+		this->AABBMaxBounds = float3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
 		createMeshLights();
 
 		m_raytracer->initScene(m_scene, m_idGeometry); // m_idGeometry is the number of geometries in the scene.
 		m_raytracer->initLights(m_lightsGUI);          // With arbitrary mesh lights, the geometry attributes and indices can only be filled after initScene().
 	}
 	const double timeRaytracer = m_timer.getTime();
+
+	// ===== Axis Aligned Bounding Box Generation
+	//{
+	//	float minX = FLT_MAX; float maxX = -FLT_MAX; // use -FLT_MAX because FLT_MIN is smallest precision value over 0
+	//	float minY = FLT_MAX; float maxY = -FLT_MAX;
+	//	float minZ = FLT_MAX; float maxZ = -FLT_MAX;
+
+	//	for (unsigned int i = 0; i < m_idGeometry; ++i) {
+	//		std::shared_ptr<sg::Triangles> tris = std::dynamic_pointer_cast<sg::Triangles>(m_geometries[i]);
+	//		
+	//	}
+
+	//	this->AABBMinBounds = float3(minX, minY, minZ);
+	//	this->AABBMaxBounds = float3(maxX, maxY, maxZ);
+	//}
+	//const double timeAABB = m_timer.getTime();
 
 	// Print out hiow long the initialization of each module took.
 	std::cout << "Application() " << timeRaytracer << " seconds overall\n";
@@ -371,7 +393,11 @@ Application::Application(GLFWwindow* window, const Options& options)
 	std::cout << "  Scene      = " << timeScene - timeSystem << " seconds\n";
 	std::cout << "  Rasterizer = " << timeRasterizer - timeScene << " seconds\n";
 	std::cout << "  Raytracer  = " << timeRaytracer - timeRasterizer << " seconds\n";
+	//std::cout << "  AABB       = " << timeAABB - timeRaytracer << " seconds\n";
 	std::cout << "}\n";
+
+	std::cout << "MIN AABB: " << AABBMinBounds.x << ", " << AABBMinBounds.y << ", " << AABBMinBounds.z << "\n";
+	std::cout << "MAX AABB: " << AABBMaxBounds.x << ", " << AABBMaxBounds.y << ", " << AABBMaxBounds.z << "\n";
 
 	restartRendering(); // Trigger a new rendering.
 }
@@ -2257,6 +2283,14 @@ static void multiplyMatrix(float* m, const float* a, const float* b)
 	m[11] = a[8] * b[3] + a[9] * b[7] + a[10] * b[11] + a[11]; // * 1
 }
 
+// m = a * b
+static void multiplyMatrixByPosition(float* m, const float* a, const float* b)
+{
+	m[0] = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3]; // * 1
+	m[1] = a[4] * b[0] + a[5] * b[1] + a[6] * b[2] + a[7]; // * 1
+	m[2] = a[8] * b[0] + a[9] * b[1] + a[10] * b[2] + a[11]; // * 1
+}
+
 
 // Depth-first traversal of the scene graph to concatenate the trabsformation matrices for mesh lights.
 void Application::traverseGraph(std::shared_ptr<sg::Node> node, InstanceData& instanceData, float matrix[12])
@@ -2302,14 +2336,27 @@ void Application::traverseGraph(std::shared_ptr<sg::Node> node, InstanceData& in
 	break;
 
 	case sg::NodeType::NT_TRIANGLES:
-	{
+	{	
 		// Only create a new light definition if the instance is not already holding a valid light index!
 		// This is the case for rectangle lights which add a light definition and add geometry to the scene.
 		if (instanceData.idLight == -1)
 		{
 			std::shared_ptr<sg::Triangles> geometry = std::dynamic_pointer_cast<sg::Triangles>(node);
-			//std::cout << "Triangles " << geometry->getId() << '\n';
+			//std::cout << "Triangles " << geometry->getId() << '\n'
+			for (TriangleAttributes t : geometry->getAttributes()) {
+				float vert[3] = { 0 };
+				float t_mat[3] = {t.vertex.x, t.vertex.y, t.vertex.z};
+				multiplyMatrixByPosition(vert, matrix, t_mat);
 
+				AABBMinBounds.x = std::min(AABBMinBounds.x, vert[0]);
+				AABBMaxBounds.x = std::max(AABBMaxBounds.x, vert[0]);
+				AABBMinBounds.y = std::min(AABBMinBounds.y, vert[1]);
+				AABBMaxBounds.y = std::max(AABBMaxBounds.y, vert[1]);
+				AABBMinBounds.z = std::min(AABBMinBounds.z, vert[2]);
+				AABBMaxBounds.z = std::max(AABBMaxBounds.z, vert[2]);
+				//std::cout << vert[0] << ", " << vert[1] << ", " << vert[2] << "\n";
+			}
+			
 			instanceData.idGeometry = geometry->getId();
 
 			// Check if the material assigned to this mesh is emissive and 

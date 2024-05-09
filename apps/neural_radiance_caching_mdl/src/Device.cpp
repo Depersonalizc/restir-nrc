@@ -1992,7 +1992,7 @@ void Device::createGeometryInstanceData(const std::vector<GeometryData>& geometr
 
 	m_d_geometryInstanceData = reinterpret_cast<GeometryInstanceData*>(memAlloc(sizeof(GeometryInstanceData) * numInstances, 16)); // int4 requires 16 byte alignment.
 	CU_CHECK(cuMemcpyHtoDAsync(reinterpret_cast<CUdeviceptr>(m_d_geometryInstanceData), m_geometryInstanceData.data(), sizeof(GeometryInstanceData) * numInstances, m_cudaStream));
-
+	
 	m_systemData.geometryInstanceData = m_d_geometryInstanceData;
 }
 

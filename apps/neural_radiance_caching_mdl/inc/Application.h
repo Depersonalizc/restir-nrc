@@ -224,6 +224,9 @@ private:
 
 	bool isEmissiveMaterial(const int indexMaterial) const;
 
+	float3 AABBMinBounds;
+	float3 AABBMaxBounds;
+
 private:
 	GLFWwindow* m_window;
 
