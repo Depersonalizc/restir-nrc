@@ -906,7 +906,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ref()
     {
         // Sample one of many lights.
         // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
-        const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 1, numLights - 1) : 0;
+        const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
 
         // attempt to get rid of mysterious light...
         // int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * (numLights - 1))), 0, (numLights - 1) - 1) : 0;
@@ -1263,7 +1263,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
             // generate candidates (X_1, ..., X_M)
             for (int i = 0; i < M; i++) {
-                const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 1, numLights - 1) : 0;
+                const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
                 const LightDefinition& lght = sysData.lightDefinitions[indexLight];
 
                 // if (tidx == 131328) {
@@ -1273,7 +1273,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
                 LightSample X_i = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + lght.typeLight, lght, thePrd);
                 //float pdf   = balanceHeuristic(X_i.pdf, lght.area/sysData.total_light_area);
-                float pdf   = X_i.pdf * lght.area/sysData.total_light_area;
+                float pdf   = X_i.pdf;
                 //float pdf   = X_i.pdf;
 
                 if (0.0f < pdf && 0 <= idxCallScatteringEval)
@@ -1384,7 +1384,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
             // Sample one of many lights.
             // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
-            const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 1, numLights - 1) : 0;
+            const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
 
             light = &sysData.lightDefinitions[indexLight];
             lightSample_non_ris = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light->typeLight, *light, thePrd);
