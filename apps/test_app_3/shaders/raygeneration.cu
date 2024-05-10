@@ -459,7 +459,7 @@ extern "C" __global__ void __raygen__path_tracer()
 		//     &prd.seed
 		// );
 		int2 current_pixel_prev_coord = pixel_from_world_coord(screen, ray, current_pixel_prev_reservoir.nearest_hit);
-		int2 current_pixel_curr_coord = pixel_from_world_coord(screen, ray, current_reservoir.nearest_hit);
+        int2 current_pixel_curr_coord = pixel_from_world_coord(screen, ray, current_reservoir.nearest_hit);
 		int offset_x = theLaunchIndex.x - current_pixel_prev_coord.x;
 		int offset_y = theLaunchIndex.y - current_pixel_prev_coord.y;
 
@@ -515,13 +515,14 @@ extern "C" __global__ void __raygen__path_tracer()
 			//     prev_frame_reservoir.M = current_reservoir.M;
 			// }
 
-			float prv_phat = length(y2.radiance_over_pdf) * y2.pdf;
-			float cur_phat = length(y1.radiance_over_pdf) * y1.pdf;
+            // float prv_phat = length(y2.radiance_over_pdf) * y2.pdf;
+            // float cur_phat = length(y1.radiance_over_pdf) * y1.pdf;
 
 			float dist_between_hits = length(prev_frame_reservoir.nearest_hit - current_reservoir.nearest_hit);
 			float wght_due_to_dist = 1.f / (dist_between_hits + 1.f);
 
-			float m_prev = balanceHeuristic(prev_frame_reservoir.M * prv_phat, current_reservoir.M * cur_phat) * wght_due_to_dist;
+            //float m_prev = balanceHeuristic(prev_frame_reservoir.M * prv_phat, current_reservoir.M * cur_phat) * wght_due_to_dist;
+            float m_prev = wght_due_to_dist;
 			if (prev_frame_reservoir.W > 0) {
 				updateReservoir(
 					&current_reservoir,
@@ -548,6 +549,10 @@ extern "C" __global__ void __raygen__path_tracer()
 					current_reservoir.w_sum, current_reservoir.W, current_reservoir.M);
 			}
 		}
+        if (index == 131328) {
+            printf("POST temporal w_sum = %f\tW = %f\tM = %d\n", current_reservoir.w_sum, current_reservoir.W, current_reservoir.M);
+            printf("\t length(current_reservoir.throughput_x_bxdf) = %f\n", length(current_reservoir.throughput_x_bxdf));
+        }
 	}
 
 
@@ -633,6 +638,11 @@ extern "C" __global__ void __raygen__path_tracer()
 			// Keep a copy of the updated reservoir for the next-frame's temporal reuse
 			//spatial_output_reservoir_buffer[lidx_ris] = updated_reservoir;
 			//radiance = y.f_actual * updated_reservoir.W;
+
+            if (index == 131328) {
+                printf("POST SPATIAL w_sum = %f\tW = %f\tM = %d\n", current_reservoir.w_sum, current_reservoir.W, current_reservoir.M);
+                printf("\t length(current_reservoir.throughput_x_bxdf) = %f\n", length(current_reservoir.throughput_x_bxdf));
+            }
 		}
 	}
 
