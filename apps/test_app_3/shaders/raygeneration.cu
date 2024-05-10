@@ -699,7 +699,7 @@ extern "C" __global__ void __raygen__path_tracer()
 	        {
 	            float W = final_reservoir.W;
 	            float3 f_q =
-	                lightSample.pdf * lightSample.radiance_over_pdf *
+                    lightSample.pdf * lightSample.radiance_over_pdf * sysData.numLights *
 	                final_reservoir.throughput_x_bxdf;
 
 	            int tidx = prd.launchIndex.y * prd.launchDim.x + prd.launchIndex.x;

@@ -1328,13 +1328,13 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                 //            length(X_i.radiance_over_pdf), X_i.pdf);
                 // }
 
-                float m_i;
+                float m_i = 1.f/float(M);
 
-                if (p_hat == 0) {
-                    m_i = 0;
-                } else {
-                    m_i = balanceHeuristic(p_hat, current_reservoir->M * current_reservoir->w_sum);
-                }
+                // if (p_hat == 0) {
+                //     m_i = 0;
+                // } else {
+                //     m_i = balanceHeuristic(p_hat, current_reservoir->M * current_reservoir->w_sum);
+                // }
 
                 float w_i = m_i * length(X_i.radiance_over_pdf); // p_hat * W_X;
 
