@@ -1398,6 +1398,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
             //            current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
             // }
 
+            if (current_reservoir->M > 40) {
+                float scale = 40 / current_reservoir->M;
+                current_reservoir->w_sum *= scale;
+            }
             current_reservoir->W =
                 (1.0f / (length(lightSample->radiance_over_pdf) * lightSample->pdf)) *  // 1 / p_hat
                                    current_reservoir->w_sum;                         // w_sum

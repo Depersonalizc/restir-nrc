@@ -537,7 +537,7 @@ extern "C" __global__ void __raygen__path_tracer()
             // 	printf("Temporal reuse after combination w_sum= %f\tW = %f\tM = %d\n\n",
             // 		current_reservoir.w_sum, current_reservoir.W, current_reservoir.M);
             // }
-			current_reservoir.M = min(current_reservoir.M, 40);
+            //current_reservoir.M = min(current_reservoir.M, 40);
 			current_reservoir.W =
 				(1.0f / (length(y1.radiance_over_pdf) * y1.pdf)) * // 1 / p_hat
 				current_reservoir.w_sum;
@@ -628,7 +628,11 @@ extern "C" __global__ void __raygen__path_tracer()
 			}
 
 			LightSample& y = current_reservoir.y;
-			current_reservoir.M = min(current_reservoir.M, 40);
+            //current_reservoir.M = min(current_reservoir.M, 40);
+            if (current_reservoir.M > 40) {
+                float scale = 40 / current_reservoir.M;
+                current_reservoir.w_sum *= scale;
+            }
 			current_reservoir.W =
 				(1.0f / (length(y.radiance_over_pdf) * y.pdf)) * // 1 / p_hat
 				current_reservoir.w_sum;
