@@ -1108,7 +1108,7 @@ void Device::initLights(const std::vector<LightGUI>& lightsGUI, const std::vecto
   }
 
   float total_light_area = 0.f;
-  for (int i = 0; i < numLights; ++i)
+  for (int i = 1; i < numLights; ++i)
   {
     const LightGUI&  lightGUI = lightsGUI[i]; // LightGUI data on the host.
     LightDefinition& light    = m_lights[i];  // LightDefinition data on the host in device layout.

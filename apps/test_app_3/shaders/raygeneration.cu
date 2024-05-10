@@ -681,7 +681,7 @@ extern "C" __global__ void __raygen__path_tracer()
                 float W = final_reservoir.W;
                 float3 f_q =
                     lightSample.pdf * lightSample.radiance_over_pdf *
-                    final_reservoir.throughput_x_bxdf;
+                    final_reservoir.throughput_x_bxdf * sysData.numLights;
 
                 int tidx = prd.launchIndex.y * prd.launchDim.x + prd.launchIndex.x;
                 if (tidx == 131328) {

@@ -906,7 +906,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ref()
     {
         // Sample one of many lights.
         // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
-        const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 1, numLights - 1) : 0;
+        const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
 
         // attempt to get rid of mysterious light...
         // int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * (numLights - 1))), 0, (numLights - 1) - 1) : 0;
@@ -1264,126 +1264,29 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
             // generate candidates (X_1, ..., X_M)
             for (int i = 0; i < M; i++) {
-                const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 1, numLights - 1) : 0;
+                const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
                 const LightDefinition& lght = sysData.lightDefinitions[indexLight];
 
-                // if (tidx == 131328) {
-                //     printf("inside hit: sampling from light %d, area %f\n",
-                //            indexLight, lght.area);
-                // }
-
+                float m_i = 1.0f / M;
                 LightSample X_i = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + lght.typeLight, lght, thePrd);
-                float pdf   = balanceHeuristic(X_i.pdf, lght.area/sysData.total_light_area);
-                //float pdf   = X_i.pdf * lght.area;
-                //float pdf   = X_i.pdf;
 
-                if (0.0f < pdf && 0 <= idxCallScatteringEval)
-                {
-                    mi::neuraylib::Bsdf_evaluate_data<mi::neuraylib::DF_HSM_NONE> eval_data;
+                float W_X = 1.0f / X_i.pdf;
+                if(X_i.pdf == 0.f) W_X = 1.0f / (1.0f / M);
 
-                    int idx = thePrd->idxStack;
+                float p_hat = length(X_i.radiance_over_pdf) * X_i.pdf;
+                if (isnan(p_hat)) p_hat = 0.f;
 
-                    if (isFrontFace || thin_walled)
-                    {
-                        eval_data.ior1 = thePrd->stack[idx].ior;
-                        eval_data.ior2 = ior;
-                    }
-                    else
-                    {
-                        idx = max(0, idx - 1);
-
-                        eval_data.ior1 = ior;
-                        eval_data.ior2 = thePrd->stack[idx].ior;
-                    }
-
-                    eval_data.k1 = thePrd->wo;
-                    eval_data.k2 = X_i.direction;
-
-                    optixDirectCall<void>(idxCallScatteringEval, &eval_data, &state, &res_data, material.arg_block);
-                    const float3 bxdf = eval_data.bsdf_diffuse + eval_data.bsdf_glossy;
-
-                    if (0.0f >= eval_data.pdf || isNull(bxdf)) {
-                        continue;
-                    }
-                    //pdf = X_i.pdf;
-                    pdf = (TYPE_LIGHT_POINT <= lght.typeLight) ?
-                              pdf : balanceHeuristic(X_i.pdf, eval_data.pdf);
-                    // pdf = balanceHeuristic3(X_i.pdf, lght.area/sysData.total_light_area, eval_data.pdf);
-                } else {
-                    continue;
-                }
-
-                if (pdf == 0.f) continue;
-
-                float p_hat = length(X_i.radiance_over_pdf) * pdf;
-
-                if (isnan(p_hat) || isinf(p_hat)) {
-                    continue;
-                }
-
-                X_i.pdf = pdf;
-
-
-                // if (tidx == 131328) {
-                //     printf("inside hit: generating light sample X_i.radiance_over_pdf = %f\tX_i.pdf = %f\n",
-                //            length(X_i.radiance_over_pdf), X_i.pdf);
-                // }
-
-                float lerp_scale = sum_p_hat;
-                float m_i;
-                sum_p_hat += p_hat;
-
-                if (sum_p_hat == 0) {
-                    lerp_scale = 0;
-                    m_i = 0;
-                } else {
-                    lerp_scale /= sum_p_hat;
-                    m_i = p_hat / sum_p_hat;
-                }
-
-                current_reservoir->W *= lerp_scale;
-                current_reservoir->w_sum *= lerp_scale;
-
-                // float W_X = 1.0f / X_i.pdf;
-                // if(X_i.pdf == 0.f) W_X = 1.0f / (1.0f / M);
-
-                // float p_hat = length(X_i.radiance_over_pdf) * X_i.pdf;
-                // if (isnan(p_hat)) p_hat = 0.f;
-
-                float w_i = m_i * length(X_i.radiance_over_pdf); // p_hat * W_X;
-
-                // if (tidx == 131328) {
-                //     printf("inside hit: reservoir before update w_sum = %f\tW = %f\tM = %d\n",
-                //            current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-                // }
-
+                // float w_i = m_i * length(X_i.radiance_over_pdf);
+                float w_i = m_i * p_hat * W_X;
 
                 updateReservoir(current_reservoir, &X_i, w_i, &thePrd->seed);
-
-                // if (tidx == 131328) {
-                //     printf("inside hit: reservoir after update w_sum = %f\tW = %f\tM = %d\n",
-                //            current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-                // }
             }
 
             // calculate W and select better candidate y
             lightSample = &current_reservoir->y;
-
-            if (tidx == 131328) {
-                LightSample& y = *lightSample;
-                printf("inside hit: updated light sample y.radiance_over_pdf = %f\ty.pdf = %f\tdirection = %f,%f,%f, dist = %f\n",
-                       length(y.radiance_over_pdf), y.pdf, y.direction.x, y.direction.y, y.direction.z, y.distance);
-                printf("inside hit: reservoir w_sum = %f\tW = %f\tM = %d\n",
-                       current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-            }
-
             current_reservoir->W =
                 (1.0f / (length(lightSample->radiance_over_pdf) * lightSample->pdf)) *  // 1 / p_hat
-                                   current_reservoir->w_sum;                         // w_sum
-
-            if (tidx == 131328) {
-                printf("current_reservoir->W = %f\n", current_reservoir->W);
-            }
+                current_reservoir->w_sum;                         // w_sum
 
             if (isnan(current_reservoir->W) || isinf(current_reservoir->W)) current_reservoir->W = 0;
 
@@ -1398,7 +1301,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
             // Sample one of many lights.
             // The caller picks the light to sample. Make sure the index stays in the bounds of the sysData.lightDefinitions array.
-            const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 1, numLights - 1) : 0;
+            const int indexLight = (1 < numLights) ? clamp(static_cast<int>(floorf(rng(thePrd->seed) * numLights)), 0, numLights - 1) : 0;
 
             light = &sysData.lightDefinitions[indexLight];
             lightSample_non_ris = optixDirectCall<LightSample, const LightDefinition&, PerRayData*>(NUM_LENS_TYPES + light->typeLight, *light, thePrd);
@@ -1464,7 +1367,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                 {
                     if(!do_ris){
                         const float weightMIS = (TYPE_LIGHT_POINT <= light->typeLight) ?
-                                                    1.0f : balanceHeuristic(lightSample->pdf, eval_data.pdf);
+                            1.0f : balanceHeuristic(lightSample->pdf, eval_data.pdf);
 
                         // The sampled emission needs to be scaled by the inverse probability to have selected this light,
                         // Selecting one of many lights means the inverse of 1.0f / numLights.
@@ -1481,6 +1384,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                             printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
                         }
                         clear_reservoir(*current_reservoir);
+                        // current_reservoir->W = 0.0;
                     }
                 }
             } else {
@@ -1490,6 +1394,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                         printf("Zeroing out reservoir due to eval_data.pdf = %f\tisNotNull(bxdf) = %d\n", eval_data.pdf, isNotNull(bxdf));
                     }
                     clear_reservoir(*current_reservoir);
+                    // current_reservoir->W = 0.0;
                 }
             }
         }
