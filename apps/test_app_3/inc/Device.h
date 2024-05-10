@@ -494,6 +494,8 @@ public:
   unsigned int m_tex;     // The OpenGL HDR texture object.
   unsigned int m_pbo;     // The OpenGL PixelBufferObject handle when interop should be used. 0 when not.
 
+  float m_last_rmae;
+
   float m_clockFactor; // Clock Factor scaled by CLOCK_FACTOR_SCALE (1.0e-9f) for USE_TIME_VIEW
 
   const Device* m_ref_device;

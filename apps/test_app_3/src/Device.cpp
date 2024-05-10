@@ -2036,9 +2036,9 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
                                 args,    // void **kernelParams,
                                 nullptr) ); // void **extra
 
-        uint32_t gridDimX_mid = div_up(gridDimX, blockDimX);
+        if (gridDimX > 512) {
+            uint32_t gridDimX_mid = div_up(gridDimX, blockDimX);
 
-        if (gridDimX_mid > 512) {
             CU_CHECK( cuLaunchKernel(m_function_psnr_intermediate,    // CUfunction f,
                                     gridDimX_mid,            // unsigned int gridDimX,
                                     1,            // unsigned int gridDimY,
@@ -2065,6 +2065,9 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
                                 m_cudaStream,    // CUstream hStream,
                                 args,    // void **kernelParams,
                                 nullptr) ); // void **extra
+
+        synchronizeStream();
+        CU_CHECK(cuMemcpyDtoH(&m_last_rmae, m_d_workspace, sizeof(float)));
     }
 
 

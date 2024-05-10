@@ -89,8 +89,7 @@ extern "C" __global__ void compute_psnr_stats(PsnrData* args)
 
     extern __shared__ float sdata[];
 
-    float luminance = -INFINITY;
-    float lum_2 = 0.f;
+    double luminance = -INFINITY;
 
     if (idx < args->num_pixels)
     {
@@ -116,13 +115,13 @@ extern "C" __global__ void compute_psnr_stats(PsnrData* args)
         // sdata[tid] = lum_2;
         // sdata[blockDim.x + tid] = luminance;
 
-        typedef cub::BlockReduce<float, 512> BlockReduce;
+        typedef cub::BlockReduce<double, 512> BlockReduce;
 
         // Allocate shared memory for BlockReduce
         __shared__ typename BlockReduce::TempStorage temp_storage;
 
         // Compute the block-wide sum for thread0
-        float abs_rel_lum_sum = BlockReduce(temp_storage).Sum(luminance);
+        double abs_rel_lum_sum = BlockReduce(temp_storage).Sum(luminance);
         //float sum_lum_2 = BlockReduce(temp_storage).Sum(lum_2);
         //float max_lum   = BlockReduce(temp_storage).Reduce(luminance, cub::Max());
 
@@ -139,7 +138,7 @@ extern "C" __global__ void compute_psnr_stats(PsnrData* args)
         // }
 
         if (tid == 0) {
-            float* workspace = reinterpret_cast<float*>(args->workspace);
+            double* workspace = reinterpret_cast<double*>(args->workspace);
             // workspace[blockIdx.x] = sdata[0];
             // workspace[gridDim.x + blockIdx.x] = sdata[blockDim.x];
             workspace[blockIdx.x] = abs_rel_lum_sum;
@@ -151,34 +150,28 @@ extern "C" __global__ void compute_psnr_stats(PsnrData* args)
 
 extern "C" __global__ void compute_psnr_stats_mid(PsnrData* args)
 {
-    printf("compute_psnr_stats_mid\n");
     const uint32_t tid = threadIdx.x;
     const uint32_t idx = blockDim.x * blockIdx.x + tid;
 
-    extern __shared__ float sdata[];
+    double abs_rel_lum_sum = -INFINITY;
 
     if (idx < args->gridDimX_start)
     {
-        const float* workspace = reinterpret_cast<float*>(args->workspace);
-        sdata[tid] = workspace[tid];
-        sdata[tid + blockDim.x] = workspace[tid + blockDim.x];
+        double* workspace = reinterpret_cast<double*>(args->workspace);
+        abs_rel_lum_sum = workspace[idx];
 
-        __syncthreads();
+        typedef cub::BlockReduce<double, 512> BlockReduce;
 
-        for (uint32_t s = blockDim.x / 2; s > 0; s >>= 1) {
-            if (tid < s && (idx + s) < args->num_pixels) {
-                sdata[tid] += sdata[tid + s];
-                float a = sdata[blockDim.x + tid];
-                float b = sdata[blockDim.x + tid + s];
-                sdata[blockDim.x + tid] = max(a,b);
-            }
-            __syncthreads();
-        }
+        // Allocate shared memory for BlockReduce
+        __shared__ typename BlockReduce::TempStorage temp_storage;
+
+        // Compute the block-wide sum for thread0
+        double abs_rel_lum_sum2 = BlockReduce(temp_storage).Sum(abs_rel_lum_sum);
 
         if (tid == 0) {
-            float* workspace = reinterpret_cast<float*>(args->workspace);
-            workspace[blockIdx.x] = sdata[0];
-            workspace[gridDim.x + blockIdx.x] = sdata[blockDim.x];
+            workspace[blockIdx.x] = abs_rel_lum_sum2;
+            //workspace[gridDim.x + blockIdx.x] = max_lum;
+
         }
     }
 }
@@ -188,19 +181,17 @@ extern "C" __global__ void compute_psnr(PsnrData* args)
 {
     const uint32_t tid = threadIdx.x;
 
-    extern __shared__ float sdata[];
-
-    const float* workspace = reinterpret_cast<float*>(args->workspace);
+    double* workspace = reinterpret_cast<double*>(args->workspace);
     float abs_rel_lum_sum     = workspace[tid];
     //float luminance = workspace[tid + blockDim.x];
 
-    typedef cub::BlockReduce<float, 1024> BlockReduce;
+    typedef cub::BlockReduce<double, 1024> BlockReduce;
 
     // Allocate shared memory for BlockReduce
     __shared__ typename BlockReduce::TempStorage temp_storage;
 
     // Compute the block-wide sum for thread0
-    float rmae_sum = BlockReduce(temp_storage).Sum(abs_rel_lum_sum);
+    double rmae_sum = BlockReduce(temp_storage).Sum(abs_rel_lum_sum);
     //float max_lum   = BlockReduce(temp_storage).Reduce(luminance, cub::Max(), blockDim.x);
 
     // __syncthreads();
@@ -228,7 +219,9 @@ extern "C" __global__ void compute_psnr(PsnrData* args)
         // float psnr = 20.f * log10(max_lum / sqrt(mse));
         // printf("\tPSNR = %f\n", psnr);
 
-        float rmae = rmae_sum / num_pixels;
+        double rmae = rmae_sum / num_pixels;
         printf("rmae_sum = %f num_pixels = %u RMAE = %f\n", rmae_sum, num_pixels, rmae);
+
+        reinterpret_cast<float*>(args->workspace)[0] = float(rmae);
     }
 }

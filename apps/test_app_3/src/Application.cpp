@@ -1250,6 +1250,40 @@ void Application::guiWindow()
 
     ImGui::End();
 
+
+    // Stats window
+    static auto& mainDevice = m_raytracer->m_devicesActive[0];
+    static auto& sysData    = mainDevice->m_systemData;
+    static bool displayed_last = false;
+    auto& lastError  = mainDevice->m_last_rmae;
+
+    static std::array<float, 256> rmaeLosses = { 0.f };
+    static int lossesOffset = 0;
+    if (m_previousComplete && !displayed_last)
+    {
+        rmaeLosses[lossesOffset++] = lastError;
+        lossesOffset %= rmaeLosses.size();
+        displayed_last = true;
+    } else {
+        displayed_last = false;
+    }
+
+    window_flags = 0;
+    if (ImGui::Begin("Stats", nullptr, window_flags))
+    {
+        ImGui::PushItemWidth(-200);
+
+        if (ImGui::CollapsingHeader("Render"))
+        {
+            ImGui::Text("Sample: #%d/%d", sysData.iterationIndex, m_state.spp);
+            ImGui::Text("RMAE: %f", lastError);
+            ImGui::PlotLines("", rmaeLosses.data(), rmaeLosses.size(), lossesOffset, nullptr, FLT_MAX, FLT_MAX, ImVec2(0, 10));
+        }
+
+        ImGui::PopItemWidth();
+    }
+    ImGui::End();
+
     if (refresh)
     {
         restartRendering(true);
