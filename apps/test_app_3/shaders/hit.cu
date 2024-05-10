@@ -1258,8 +1258,42 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
             current_reservoir = &ris_output_reservoir_buffer[lidx];
 
+
+            // If we have a sample in the reservoir, check it for visibility
+            if (current_reservoir->M > 0) {
+                // Pass the current payload registers through to the shadow ray.
+                unsigned int p0 = optixGetPayload_0();
+                unsigned int p1 = optixGetPayload_1();
+
+                thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
+
+
+                LightSample& lsample = current_reservoir->y;
+                if (tidx == 131328) {
+                    printf("about to shoot shadow ray (first time): thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
+                           thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lsample.direction.x, lsample.direction.y, lsample.direction.z);
+                }
+
+                //Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
+                //to prevent self-intersections with the actual light geometry in the scene.
+                optixTrace(sysData.topObject,
+                           thePrd->pos, lsample.direction, // origin, direction
+                           sysData.sceneEpsilon, lsample.distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
+                           OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
+                           TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
+                           p0, p1); // Pass through thePrd to the shadow ray.
+
+                if ((thePrd->flags & FLAG_SHADOW) != 0) // Visibility test failed
+                {
+                    clear_reservoir(*current_reservoir);
+                }
+            }
+
+
             // algorithm 2 from course notes
             int M = thePrd->num_ris_samples;
+
+            float M_denom = 1.f / (M + current_reservoir->M);
 
             // generate candidates (X_1, ..., X_M)
             for (int i = 0; i < M; i++) {
@@ -1305,8 +1339,9 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                         continue;
                     }
                     //pdf = X_i.pdf;
-                    pdf = (TYPE_LIGHT_POINT <= lght.typeLight) ?
-                              pdf : balanceHeuristic(X_i.pdf, eval_data.pdf);
+                    //pdf = (TYPE_LIGHT_POINT <= lght.typeLight) ?
+                    //          pdf : balanceHeuristic(X_i.pdf, eval_data.pdf);
+                    pdf *= eval_data.pdf;
                     // pdf = balanceHeuristic3(X_i.pdf, lght.area/sysData.total_light_area, eval_data.pdf);
                 } else {
                     continue;
@@ -1328,7 +1363,7 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                 //            length(X_i.radiance_over_pdf), X_i.pdf);
                 // }
 
-                float m_i = 1.f/float(M);
+                float m_i = M_denom;
 
                 // if (p_hat == 0) {
                 //     m_i = 0;
@@ -1426,49 +1461,41 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
             if (0.0f < eval_data.pdf && isNotNull(bxdf))
             {
-                // Pass the current payload registers through to the shadow ray.
-                unsigned int p0 = optixGetPayload_0();
-                unsigned int p1 = optixGetPayload_1();
+                if (!do_ris) {
+                    // Pass the current payload registers through to the shadow ray.
+                    unsigned int p0 = optixGetPayload_0();
+                    unsigned int p1 = optixGetPayload_1();
 
-                thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
+                    thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
 
-                int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                if (tidx == 131328) {
-                    printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
-                           thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lightSample->direction.x, lightSample->direction.y, lightSample->direction.z);
-                }
-                //Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
-                //to prevent self-intersections with the actual light geometry in the scene.
-                optixTrace(sysData.topObject,
-                           thePrd->pos, lightSample->direction, // origin, direction
-                           sysData.sceneEpsilon, lightSample->distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
-                           OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
-                           TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
-                           p0, p1); // Pass through thePrd to the shadow ray.
-
-                if ((thePrd->flags & FLAG_SHADOW) == 0) // Visibility test passed
-                {
-                    if(!do_ris){
-                        const float weightMIS = (TYPE_LIGHT_POINT <= light->typeLight) ?
-                                                    1.0f : balanceHeuristic(lightSample->pdf, eval_data.pdf);
-
-                        // The sampled emission needs to be scaled by the inverse probability to have selected this light,
-                        // Selecting one of many lights means the inverse of 1.0f / numLights.
-                        // This is using the path throughput before the sampling modulated it above.
-                        if (tidx == 131328) {
-                            printf("Point NOT in shadow\n");
-                        }
-                        thePrd->radiance += throughput * bxdf * lightSample->radiance_over_pdf * (float(numLights) * weightMIS);
+                    int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
+                    if (tidx == 131328) {
+                        printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
+                               thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lightSample->direction.x, lightSample->direction.y, lightSample->direction.z);
                     }
-                } else {
-                    if(do_ris) {
-                        int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                        if (tidx == 131328) {
-                            printf("Zeroing out reservoir due to (thePrd->flags & FLAG_SHADOW) == 0 being false\n");
-                        }
-                        clear_reservoir(*current_reservoir);
+                    //Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
+                    //to prevent self-intersections with the actual light geometry in the scene.
+                    optixTrace(sysData.topObject,
+                               thePrd->pos, lightSample->direction, // origin, direction
+                               sysData.sceneEpsilon, lightSample->distance - sysData.sceneEpsilon, 0.0f, // tmin, tmax, time
+                               OptixVisibilityMask(0xFF), OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, // The shadow ray type only uses anyhit programs.
+                               TYPE_RAY_SHADOW, NUM_RAY_TYPES, TYPE_RAY_SHADOW,
+                               p0, p1); // Pass through thePrd to the shadow ray.
+
+                    if ((thePrd->flags & FLAG_SHADOW) == 0) // Visibility test passed
+                    {
+                            const float weightMIS = (TYPE_LIGHT_POINT <= light->typeLight) ?
+                                                        1.0f : balanceHeuristic(lightSample->pdf, eval_data.pdf);
+
+                            // The sampled emission needs to be scaled by the inverse probability to have selected this light,
+                            // Selecting one of many lights means the inverse of 1.0f / numLights.
+                            // This is using the path throughput before the sampling modulated it above.
+                            if (tidx == 131328) {
+                                printf("Point NOT in shadow\n");
+                            }
+                            thePrd->radiance += throughput * bxdf * lightSample->radiance_over_pdf * (float(numLights) * weightMIS);
                     }
-                }
+                } // else do nothing: it'll be handled in raygen.cu
             } else {
                 if(do_ris) {
                     int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;

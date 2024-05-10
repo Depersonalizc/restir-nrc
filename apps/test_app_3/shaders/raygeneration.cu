@@ -489,7 +489,7 @@ extern "C" __global__ void __raygen__path_tracer()
 		//	prev_coord_did_hit = false;
 		//}
 
-		bool prev_too_far = sqrt((double)(offset_x * offset_x + offset_y * offset_y)) > 10.0;
+        bool prev_too_far = sqrt((double)(offset_x * offset_x + offset_y * offset_y)) > 5.0;
 
 		if (!prev_coord_offscreen && prev_coord_did_hit && !prev_too_far) {
 			// select previous frame's reservoir and combine it
@@ -522,14 +522,14 @@ extern "C" __global__ void __raygen__path_tracer()
 			float wght_due_to_dist = 1.f / (dist_between_hits + 1.f);
 
             //float m_prev = balanceHeuristic(prev_frame_reservoir.M * prv_phat, current_reservoir.M * cur_phat) * wght_due_to_dist;
-            float m_prev = wght_due_to_dist;
+            float m_prev = 1.f;
 			if (prev_frame_reservoir.W > 0) {
 				updateReservoir(
 					&current_reservoir,
 					&y2,
 					length(y2.radiance_over_pdf) * y2.pdf * prev_frame_reservoir.W * m_prev,
 					&prd.seed,
-					prev_frame_reservoir.M
+                    uint32_t(prev_frame_reservoir.M * wght_due_to_dist)
 				);
 			}
 
