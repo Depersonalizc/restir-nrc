@@ -1269,10 +1269,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
 
 
                 LightSample& lsample = current_reservoir->y;
-                if (tidx == 131328) {
-                    printf("about to shoot shadow ray (first time): thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
-                           thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lsample.direction.x, lsample.direction.y, lsample.direction.z);
-                }
+                // if (tidx == 131328) {
+                //     printf("about to shoot shadow ray (first time): thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
+                //            thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lsample.direction.x, lsample.direction.y, lsample.direction.z);
+                // }
 
                 //Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
                 //to prevent self-intersections with the actual light geometry in the scene.
@@ -1390,21 +1390,21 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
             // calculate W and select better candidate y
             lightSample = &current_reservoir->y;
 
-            if (tidx == 131328) {
-                LightSample& y = *lightSample;
-                printf("inside hit: updated light sample y.radiance_over_pdf = %f\ty.pdf = %f\tdirection = %f,%f,%f, dist = %f\n",
-                       length(y.radiance_over_pdf), y.pdf, y.direction.x, y.direction.y, y.direction.z, y.distance);
-                printf("inside hit: reservoir w_sum = %f\tW = %f\tM = %d\n",
-                       current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-            }
+            // if (tidx == 131328) {
+            //     LightSample& y = *lightSample;
+            //     printf("inside hit: updated light sample y.radiance_over_pdf = %f\ty.pdf = %f\tdirection = %f,%f,%f, dist = %f\n",
+            //            length(y.radiance_over_pdf), y.pdf, y.direction.x, y.direction.y, y.direction.z, y.distance);
+            //     printf("inside hit: reservoir w_sum = %f\tW = %f\tM = %d\n",
+            //            current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
+            // }
 
             current_reservoir->W =
                 (1.0f / (length(lightSample->radiance_over_pdf) * lightSample->pdf)) *  // 1 / p_hat
                                    current_reservoir->w_sum;                         // w_sum
 
-            if (tidx == 131328) {
-                printf("current_reservoir->W = %f\n", current_reservoir->W);
-            }
+            // if (tidx == 131328) {
+            //     printf("current_reservoir->W = %f\n", current_reservoir->W);
+            // }
 
             if (isnan(current_reservoir->W) || isinf(current_reservoir->W)) current_reservoir->W = 0;
 
@@ -1469,10 +1469,10 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                     thePrd->flags &= ~FLAG_SHADOW; // Clear the shadow flag.
 
                     int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                    if (tidx == 131328) {
-                        printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
-                               thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lightSample->direction.x, lightSample->direction.y, lightSample->direction.z);
-                    }
+                    // if (tidx == 131328) {
+                    //     printf("about to shoot shadow ray: thePrd.pos = %f,%f,%f, lightSample.direction = %f,%f,%f\n",
+                    //            thePrd->pos.x,thePrd->pos.y,thePrd->pos.z, lightSample->direction.x, lightSample->direction.y, lightSample->direction.z);
+                    // }
                     //Note that the sysData.sceneEpsilon is applied on both sides of the shadow ray [t_min, t_max] interval
                     //to prevent self-intersections with the actual light geometry in the scene.
                     optixTrace(sysData.topObject,
@@ -1490,18 +1490,18 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
                             // The sampled emission needs to be scaled by the inverse probability to have selected this light,
                             // Selecting one of many lights means the inverse of 1.0f / numLights.
                             // This is using the path throughput before the sampling modulated it above.
-                            if (tidx == 131328) {
-                                printf("Point NOT in shadow\n");
-                            }
+                            // if (tidx == 131328) {
+                            //     printf("Point NOT in shadow\n");
+                            // }
                             thePrd->radiance += throughput * bxdf * lightSample->radiance_over_pdf * (float(numLights) * weightMIS);
                     }
                 } // else do nothing: it'll be handled in raygen.cu
             } else {
                 if(do_ris) {
                     int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-                    if (tidx == 131328) {
-                        printf("Zeroing out reservoir due to eval_data.pdf = %f\tisNotNull(bxdf) = %d\n", eval_data.pdf, isNotNull(bxdf));
-                    }
+                    // if (tidx == 131328) {
+                    //     printf("Zeroing out reservoir due to eval_data.pdf = %f\tisNotNull(bxdf) = %d\n", eval_data.pdf, isNotNull(bxdf));
+                    // }
                     clear_reservoir(*current_reservoir);
                 }
             }
@@ -1509,18 +1509,18 @@ extern "C" __global__ void __closesthit__radiance_no_emission_ris()
     }
 
     int tidx = thePrd->launchIndex.y * thePrd->launchDim.x + thePrd->launchIndex.x;
-    if (tidx == 131328 && do_ris) {
-        Reservoir* current_reservoir;
+    // if (tidx == 131328 && do_ris) {
+    //     Reservoir* current_reservoir;
 
-        int lidx = thePrd->launch_linear_index;
-        // if (tidx != lidx) {
-        //     printf("WEIRD: tidx != lidx   %d != %d\n", tidx, lidx);
-        // }
-        Reservoir* ris_output_reservoir_buffer = reinterpret_cast<Reservoir*>(sysData.RISOutputReservoirBuffer);
-        current_reservoir = &ris_output_reservoir_buffer[lidx];
+    //     int lidx = thePrd->launch_linear_index;
+    //     // if (tidx != lidx) {
+    //     //     printf("WEIRD: tidx != lidx   %d != %d\n", tidx, lidx);
+    //     // }
+    //     Reservoir* ris_output_reservoir_buffer = reinterpret_cast<Reservoir*>(sysData.RISOutputReservoirBuffer);
+    //     current_reservoir = &ris_output_reservoir_buffer[lidx];
 
-        printf(" about to leave hit: reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
-    }
+    //     printf(" about to leave hit: reservoir w_sum = %f\tW = %f\tM = %d\n", current_reservoir->w_sum, current_reservoir->W, current_reservoir->M);
+    // }
 
     // Now after everything has been handled using the current material stack,
     // adjust the material stack if there was a transmission crossing a boundary surface.
