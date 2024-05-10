@@ -366,7 +366,7 @@ extern "C" __global__ void __raygen__path_tracer()
 	PerRayData prd;
 
 	// Initialize the random number generator seed from the linear pixel index and the iteration index.
-	prd.seed = tea<4>(theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
+    prd.seed = tea<4>(theLaunchDim.x * theLaunchIndex.y + theLaunchIndex.x + sysData.cur_iter, sysData.iterationIndex); // PERF This template really generates a lot of instructions.
 	prd.launchDim = theLaunchDim;
 	prd.launchIndex = theLaunchIndex;
 	prd.depth = 0;
@@ -778,7 +778,7 @@ extern "C" __global__ void __raygen__path_tracer()
 		}
 		buffer[index] = result;
 #else // if !USE_TIME_VIEW
-		if (sysData.iterationIndex < sysData.spp) { // FIXME
+        if (sysData.cur_iter < sysData.spp) { // FIXME
 			if (0 < sysData.iterationIndex)
 			{
 				const float4 dst = buffer[index]; // RGBA32F

@@ -164,6 +164,8 @@ Raytracer::Raytracer(const int maskDevices,
 , m_raytracer_ref(raytracer_ref)
 , m_iterationIndex(0)
 , m_samplesPerPixel(1)
+    , keep_running(false)
+    ,one_more_frame(false)
 {
   CU_CHECK( cuInit(0) ); // Initialize CUDA driver API.
 
@@ -398,7 +400,7 @@ unsigned int Raytracer::render(const int mode, bool ref)
     // HACK!
     int32_t one = ref ? 0 : 1;
     // Continue manual accumulation rendering if the samples per pixel have not been reached.
-    if (m_iterationIndex < m_samplesPerPixel + one) // non-reference computation needs this for spatial reuse
+    if (m_iterationIndex < m_samplesPerPixel + one || keep_running || one_more_frame) // non-reference computation needs this for spatial reuse
     {
         void* buffer = nullptr;
 
@@ -409,6 +411,9 @@ unsigned int Raytracer::render(const int mode, bool ref)
         m_devicesActive[index]->render(m_iterationIndex, &buffer, mode); // Interactive rendering. All devices work on the same iteration index.
 
         ++m_iterationIndex;
+    }
+    if (one_more_frame) {
+        one_more_frame = false;
     }
     //std::cout << "ref " << ref << " iteration_index: " << m_iterationIndex << std::endl;
     return m_iterationIndex;

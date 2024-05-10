@@ -110,6 +110,8 @@ public:
 
   unsigned int m_iterationIndex;  // Tracks which sub-frame is currently raytraced.
   unsigned int m_samplesPerPixel; // This is samplesSqrt squared. Rendering end-condition is: m_iterationIndex == m_samplesPerPixel.
+  bool keep_running;
+  bool one_more_frame;
 
   std::vector<GeometryData> m_geometryData; // The geometry device data. (Either per P2P island when sharing GAS, or per device when not sharing.)
 

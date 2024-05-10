@@ -1960,7 +1960,9 @@ void Device::render(const unsigned int iterationIndex, void** buffer, const int 
     // CUdeviceptr temp = m_systemData.oldReservoirBuffer;
     // m_systemData.oldReservoirBuffer = m_systemData.reservoirBuffer;
     // m_systemData.reservoirBuffer = temp;
-    m_systemData.cur_iter = m_systemData.iterationIndex % (m_systemData.spp + 1);
+
+    int32_t one = !m_ref_device ? 0 : 1;
+    m_systemData.cur_iter = m_systemData.iterationIndex % (m_systemData.spp + one);
 
     if (true) // Update the whole SystemData block because more than the iterationIndex changed. This normally means a GUI interaction. Just sync.
     {

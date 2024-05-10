@@ -854,6 +854,12 @@ void Application::guiWindow()
 
     if (ImGui::CollapsingHeader("System"))
     {
+        if (ImGui::Button("One more frame")) {
+            m_raytracer->one_more_frame = true;
+        }
+        if (ImGui::Checkbox("Keep running", &m_raytracer->keep_running)) {
+
+        }
         if (ImGui::DragFloat("Mouse Ratio", &m_mouseSpeedRatio, 0.1f, 0.1f, 1000.0f, "%.1f"))
         {
             m_camera.setSpeedRatio(m_mouseSpeedRatio);
